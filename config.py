@@ -26,9 +26,8 @@ class Config:
 
     # MCP Configuration
     FIRECRAWL_MCP_SERVER = os.getenv("FIRECRAWL_MCP_SERVER", "puppeteer")
-    FIRECRAWL_API_URL = os.getenv(
-        "FIRECRAWL_API_URL", "https://firecrawl-api.example.com"
-    )
+    # The FIRECRAWL_API_URL below under "External Service URLs" is the primary one.
+    # This older one for MCP is effectively deprecated by the move to the public API.
 
     # LLM Provider
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
@@ -64,7 +63,8 @@ class Config:
     WHISPER_FINETUNED_MODEL_PATH = os.getenv("WHISPER_FINETUNED_MODEL_PATH", None)
 
     # External Service URLs
-    FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev/v1")
+    # Defaulting to Firecrawl's v0 API base for core scrape/crawl operations.
+    FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev/v0") 
 
     # Required API Key Groups
     # At least one from each group must be present

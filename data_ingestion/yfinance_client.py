@@ -11,6 +11,7 @@ from loguru import logger
 import json # Added for cache handling
 import requests # To catch requests.exceptions.RequestException
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import re # Added for regex parsing
 
 from config import Config
 from data_ingestion.firecrawl_scraper import FirecrawlScraper # Added import
@@ -310,111 +311,158 @@ class YFinanceClient:
             logger.error(f"Error getting earnings calendar: {str(e)}") # This refers to the live scraped one
             return [{"error": str(e), "timestamp": datetime.now().isoformat()}]
 
-    def _parse_yahoo_earnings_page(
-        self, earnings_rows: Optional[List[Dict[str, Any]]]
-    ) -> List[Dict[str, Any]]:
-        """Parse scraped Yahoo Finance earnings data.
+    def _parse_yahoo_earnings_page_from_content(self, page_content: str) -> List[Dict[str, Any]]:
+        """Parse scraped Yahoo Finance earnings calendar page content (markdown/text).
 
         Args:
-            earnings_rows: A list of dictionaries, where each dictionary represents a row
-                           of earnings data scraped by FirecrawlScraper. Expected keys
-                           within each dict are based on the selectors used (e.g., 'symbol',
-                           'company_name', 'earnings_date', 'earnings_time', 'eps_estimate').
+            page_content: The markdown or text content of the earnings calendar page.
 
         Returns:
             A list of parsed earnings event dictionaries.
         """
-        if not earnings_rows:
-            logger.warning("No earnings rows data provided to _parse_yahoo_earnings_page.")
+        parsed_events = []
+        if not page_content:
+            logger.warning("No page content provided to _parse_yahoo_earnings_page_from_content.")
             return []
 
-        parsed_events = []
-        for idx, row in enumerate(earnings_rows):
-            if not isinstance(row, dict):
-                logger.warning(f"Skipping row {idx} in earnings data as it's not a dictionary: {row}")
+        # Regex to capture relevant data. This is highly dependent on Yahoo's page structure
+        # and Firecrawl's markdown conversion. It needs to be robust.
+        # Example line from Yahoo (might be in a markdown table):
+        # "Symbol Company EPS Estimate Earnings Call Time" - Header
+        # "AAPL Apple Inc 1.50 Before Market Open" - Data Row
+        # This will try to find list items or table rows in markdown.
+        # A more complex approach might involve parsing markdown tables if Firecrawl produces them.
+        
+        # This regex is illustrative and will likely need significant refinement.
+        # It looks for patterns like:
+        # Optional markdown list/table chars: ^\s*[-*|]?\s*
+        # Symbol: ([A-Z]{1,5})
+        # Company Name: (.*?)\s*\(?\1\)?\s*  (captures name, optionally followed by symbol in parens)
+        # Earnings Date: (Today|Tomorrow|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}|\d{1,2}/\d{1,2}/\d{4})
+        # Earnings Time: (Before Market Open|After Market Close|Time Not Supplied|During Market Hours|\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:ET|EST|EDT|CT|CST|CDT|MT|MST|MDT|PT|PST|PDT)?)
+        # EPS Estimate: (?:Est\.:\s*|Estimate:\s*|EPS Estimate:\s*)?(-?\d+\.\d{2}|N/A|-)
+        # This is very optimistic. A simpler line-by-line processing might be more robust initially.
+
+        # Let's try a simpler approach: iterate line by line and look for patterns.
+        # Yahoo's calendar often has a list-like structure for each day's earnings.
+        # Firecrawl's `onlyMainContent: True` should give us a cleaner text version.
+
+        current_year = datetime.now().year
+        lines = page_content.splitlines()
+        
+        # General pattern to identify a line that might contain an earnings event.
+        # This is very broad and will need refinement based on actual Firecrawl output.
+        # It looks for a ticker, then some text (company), then a date-like string, then time-like string, then optional EPS.
+        # Example target text that Firecrawl might produce from a list item:
+        # "AAPL Apple Inc. May 1 AMC Estimate: 1.50"
+        # "TSLA Tesla, Inc. Apr 23 After Market Close Estimate: 0.65"
+        # "NVDA NVIDIA Corporation Today Before Market Open -" (Estimate might be missing or '-')
+        
+        # Regex to capture SYMBOL, COMPANY NAME, DATE, TIME, EPS_ESTIMATE
+        # This pattern is complex and assumes a certain ordering and format.
+        # It's broken down for readability.
+        pattern_str = (
+            r"^(?P<symbol>[A-Z]{1,5}(?:\.[A-Z])?)\s+"  # Symbol (e.g., AAPL, BRK.B)
+            r"(?P<company_name>.+?)\s+"                 # Company Name (non-greedy)
+            # Date (handles "Month Day", "Month Day, Year", "Today", "Tomorrow")
+            r"(?P<earnings_date>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,\s*\d{4})?|Today|Tomorrow)\s*" 
+            # Time (flexible for various Yahoo formats)
+            r"(?P<earnings_time>(?:Before Market Open|After Market Close|During Market Hours|Time Not Supplied|TAS|BMO|AMC|\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:[A-Z]{2,3}T)?))"
+            r"(?:\s*Estimate:\s*(?P<eps_estimate>-?\d+\.\d{2}|-|N/A))?.*$" # Optional EPS Estimate
+        )
+        # A simpler pattern if the above is too strict, focusing on symbol and date:
+        # pattern_str = r"^(?P<symbol>[A-Z]{1,5}(?:\.[A-Z])?)\s+(?P<company_name>.+?)\s+(?P<earnings_date>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,\s*\d{4})?|Today|Tomorrow)"
+
+
+        event_pattern = re.compile(pattern_str, re.IGNORECASE)
+
+        for line in lines:
+            line = line.strip()
+            if not line:
                 continue
-            try:
-                symbol = row.get("symbol", "N/A")
-                company_name = row.get("company_name", "N/A")
+            
+            match = event_pattern.search(line)
+            if match:
+                data = match.groupdict()
                 
-                # Date parsing and normalization
-                raw_date = row.get("earnings_date")
-                earnings_date_str = "N/A"
-                if raw_date:
+                symbol = data.get("symbol", "N/A").upper()
+                company_name = data.get("company_name", "N/A").strip()
+                # Clean up company name if symbol is appended e.g. "Apple Inc. AAPL"
+                if company_name.endswith(symbol):
+                    company_name = company_name[:-len(symbol)].strip()
+                if company_name.endswith(f"({symbol})"): # e.g. "Apple Inc. (AAPL)"
+                    company_name = company_name[:-len(symbol)-2].strip()
+
+
+                raw_date_str = data.get("earnings_date", "N/A").strip()
+                earnings_date_iso = "N/A"
+
+                if raw_date_str.lower() == "today":
+                    earnings_date_iso = datetime.now().strftime("%Y-%m-%d")
+                elif raw_date_str.lower() == "tomorrow":
+                    earnings_date_iso = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                else:
                     try:
-                        # Yahoo earnings calendar often has dates like "May 23, 2024" or "Tomorrow"
-                        # This needs robust parsing. For now, assume it might be directly usable or needs simple parsing.
-                        # A more robust solution would use dateutil.parser
-                        # For simplicity, if it contains " AM" or " PM" (time info), strip it for date.
-                        if isinstance(raw_date, str):
-                            if " AM" in raw_date or " PM" in raw_date: # Handles cases like "May 23 AM"
-                                raw_date_parts = raw_date.split(" ")
-                                if len(raw_date_parts) > 1: # e.g. "May 23"
-                                     # This part is tricky without knowing the exact format from selectors.
-                                     # Assuming for now the selector gives a date string that might need parsing
-                                     # Example: "May 23" -> needs year.
-                                     # Let's assume for now the selector gives something more direct or already processed.
-                                     # If the date selector is specific enough, it might give "YYYY-MM-DD" or "Mon DD, YYYY"
-                                     # For now, we'll assume it's a string that might be parsable.
-                                     # This is a placeholder for more robust date parsing.
-                                     # A common format on Yahoo is like "May 23, 2024".
-                                    pass # Needs more context on actual raw_date format from scraper
-                        
-                        # Assuming raw_date is in a format like "Month Day, Year" or can be parsed
-                        # This is a simplification. Real parsing would be more complex.
-                        # If Firecrawl selectors give clean text, this becomes easier.
-                        # For now, we'll just use it as is if it's a string.
-                        if isinstance(raw_date, str):
-                            # Attempt to parse common Yahoo date format, e.g., "May 23, 2024"
-                            # Or it might be something like "Today", "Tomorrow"
-                            # This part is highly dependent on the actual text scraped.
-                            # For now, let's assume it's a string we can use or placeholder.
-                            # A better approach would be to parse it into a datetime object and reformat.
-                            # Example: datetime.strptime(raw_date, "%b %d, %Y").strftime("%Y-%m-%d")
-                            # But this requires knowing the exact format from scraping.
-                            earnings_date_str = raw_date # Placeholder - requires actual scraped format
-                        elif isinstance(raw_date, dict) and 'date' in raw_date: # if scraper returns structured date
-                            earnings_date_str = raw_date['date']
-                        else: # Fallback
-                            earnings_date_str = str(raw_date) if raw_date else "N/A"
+                        # Check if year is missing, e.g., "May 01"
+                        if ',' not in raw_date_str:
+                            date_obj = datetime.strptime(f"{raw_date_str} {current_year}", "%b %d %Y")
+                        else: # e.g. "May 01, 2024"
+                            date_obj = datetime.strptime(raw_date_str, "%b %d, %Y")
+                        earnings_date_iso = date_obj.strftime("%Y-%m-%d")
+                    except ValueError as ve:
+                        logger.debug(f"Could not parse date '{raw_date_str}' for {symbol}: {ve}")
+                        earnings_date_iso = raw_date_str # Keep original if parsing fails
 
-                    except Exception as date_e:
-                        logger.warning(f"Could not parse date for row {idx}: {raw_date}. Error: {date_e}")
-                        earnings_date_str = "N/A"
+                earnings_time = data.get("earnings_time", "Time Not Supplied").strip()
+                if not earnings_time: earnings_time = "Time Not Supplied"
                 
-                earnings_time = row.get("earnings_time", "Time Not Supplied")
-                if not earnings_time: earnings_time = "Time Not Supplied" # Ensure it's not empty
+                # Normalize time abbreviations
+                if earnings_time.upper() == "BMO": earnings_time = "Before Market Open"
+                if earnings_time.upper() == "AMC": earnings_time = "After Market Close"
+                if earnings_time.upper() == "TAS": earnings_time = "Time Not Supplied" # Or "During Market Hours"
 
-                eps_estimate_raw = row.get("eps_estimate")
+                eps_estimate_raw = data.get("eps_estimate")
                 eps_estimate = None
-                if eps_estimate_raw and eps_estimate_raw not in ["-", "N/A"]:
+                if eps_estimate_raw and eps_estimate_raw.strip() not in ["-", "N/A", ""]:
                     try:
-                        eps_estimate = float(eps_estimate_raw)
+                        eps_estimate = float(eps_estimate_raw.strip())
                     except ValueError:
-                        logger.warning(f"Could not parse EPS estimate '{eps_estimate_raw}' for {symbol}")
-                        eps_estimate = None
-
-                # Reported EPS and Market Cap are typically not on the main calendar page per row
-                # Defaulting them.
+                        logger.debug(f"Could not parse EPS estimate '{eps_estimate_raw}' for {symbol}")
+                
                 event = {
                     "symbol": symbol,
                     "company_name": company_name,
-                    "earnings_date": earnings_date_str, # This needs to be YYYY-MM-DD
+                    "earnings_date": earnings_date_iso,
                     "earnings_time": earnings_time,
                     "eps_estimate": eps_estimate,
-                    "reported_eps": None, # Usually N/A for future events
-                    "market_cap": row.get("market_cap"), # If available from selectors
-                    "source": "Yahoo Finance (via Firecrawl)"
+                    "reported_eps": None, # Not available from calendar view
+                    "market_cap": None, # Not available from calendar view
+                    "source": "Yahoo Finance (via Firecrawl text parse)"
                 }
-                parsed_events.append(event)
-            except Exception as e:
-                logger.error(f"Error parsing earnings row {idx}: {row}. Error: {str(e)}")
-                continue
-        
-        logger.info(f"Successfully parsed {len(parsed_events)} earnings events.")
+                # Avoid duplicates if multiple lines match for the same core info (less likely with strict regex)
+                # This simple check might not be sufficient for very messy data.
+                is_duplicate = False
+                for pe in parsed_events:
+                    if pe["symbol"] == event["symbol"] and pe["earnings_date"] == event["earnings_date"]:
+                        is_duplicate = True
+                        break
+                if not is_duplicate:
+                    parsed_events.append(event)
+            # else:
+                # logger.debug(f"Line did not match earnings event pattern: {line[:100]}")
+
+
+        if not parsed_events:
+             logger.warning(
+                "Parsing Yahoo Finance earnings calendar from page content (markdown/text) yielded no events. "
+                "This may be due to changes in page structure or Firecrawl output format. "
+                "The regex patterns may need adjustment."
+            )
+        else:
+            logger.info(f"Successfully parsed {len(parsed_events)} earnings events from page content.")
         return parsed_events
 
-    def get_earnings_calendar(self, days: int = 7) -> List[Dict[str, Any]]:
+    async def get_earnings_calendar(self, days: int = 7) -> List[Dict[str, Any]]:
         """Get upcoming earnings releases by scraping Yahoo Finance.
 
         Args:
@@ -426,74 +474,51 @@ class YFinanceClient:
         Returns:
             A list of dictionaries containing earnings release information.
         """
-        cache_key = f"live_earnings_calendar:default_view_approx_{days}d" # Cache key reflects default view
+        cache_key = f"live_earnings_calendar:default_view_approx_{days}d_textparse" # Updated cache key
         cached_data = self._get_from_cache(cache_key)
 
         if cached_data:
-            logger.debug(f"Retrieved earnings calendar (default view) from cache. Requested days: {days}")
+            logger.debug(f"Retrieved earnings calendar (text_parse default view) from cache. Requested days: {days}")
             return cached_data
 
-        logger.info(f"Fetching live earnings calendar. Requested days: {days}. "
+        logger.info(f"Fetching live earnings calendar (text_parse). Requested days: {days}. "
                     "Note: Scraping fetches Yahoo's default calendar view (typically current week).")
         
         EARNINGS_CALENDAR_URL = "https://finance.yahoo.com/calendar/earnings"
         
-        # These selectors need to be robust and verified against Yahoo's current structure.
-        # Assuming FirecrawlScraper's scrape_url returns a dictionary where keys are
-        # the selector names, and values are the extracted data (e.g., list of strings or dicts).
-        earnings_selectors = {
-            "rows": "div[data-test='cal-table'] ul li", # Top-level selector for each earnings event row
-            # Relative selectors within each "row" element. Firecrawl should handle this.
-            # If Firecrawl returns structured data per row, these are keys in that structure.
-            # If Firecrawl returns flat lists, parsing logic needs to map them.
-            # Assuming the former: each item in "rows" is a dict with these keys.
-            "symbol": "a[data-test='symbol']",
-            "company_name": "span[aria-label='Company']",
-            "earnings_date": "span[aria-label='Earnings Date']", # This text needs careful parsing
-            "earnings_time": "span[aria-label='Earnings Call Time']", # e.g., "Before Market", "After Market"
-            "eps_estimate": "span[aria-label='EPS Estimate']",
-            # "market_cap": "span[aria-label='Market Cap']", # If available and desired
-        }
-
+        # No selectors needed, FirecrawlScraper will get main content
         try:
-            scraped_page_data = self.firecrawl_scraper.scrape_url(
-                url=EARNINGS_CALENDAR_URL, 
-                selectors=earnings_selectors
+            # Default pageOptions in FirecrawlScraper are {"onlyMainContent": True, "includeHtml": False}
+            # which should provide markdown or main text content.
+            scraped_page_response = await self.firecrawl_scraper.scrape_url(
+                url_to_scrape=EARNINGS_CALENDAR_URL
             )
 
-            # Check for errors from FirecrawlScraper itself or if data is missing
-            if not scraped_page_data or scraped_page_data.get("error") or scraped_page_data.get("success") is False:
-                error_msg = scraped_page_data.get('error', 'No data returned or success=false')
-                logger.error(f"Failed to scrape earnings calendar: {error_msg}")
-                # Cache the error indication to prevent rapid retries
-                self._set_in_cache(cache_key, [{"error": "Scraping failed.", "details": error_msg}], 300) # Cache error for 5 mins
-                return [{"error": "Failed to retrieve earnings calendar data via scraping.", "details": error_msg, "timestamp": datetime.now().isoformat()}]
+            if not scraped_page_response.get("success"):
+                error_msg = scraped_page_response.get('error', 'Unknown error')
+                logger.error(f"Failed to scrape earnings calendar page: {error_msg} - Details: {scraped_page_response.get('details')}")
+                self._set_in_cache(cache_key, [{"error": "Scraping failed.", "details": error_msg}], 300) 
+                return [{"error": "Failed to retrieve earnings calendar page via Firecrawl.", "details": error_msg, "timestamp": datetime.now().isoformat()}]
 
-            # The actual data from Firecrawl based on selectors.
-            # If "rows" selector worked, this should be a list of dicts.
-            # Each dict corresponds to one <li> element, with keys like "symbol", "company_name" etc.
-            earnings_data_rows = scraped_page_data.get("rows") 
-
-            if not earnings_data_rows:
-                logger.warning(f"No 'rows' data found in scraped earnings calendar from {EARNINGS_CALENDAR_URL}. Scraped data: {scraped_page_data}")
-                # Cache an empty list to prevent re-scraping on immediate retries for a short period
+            page_content = scraped_page_response.get("content")
+            if not page_content:
+                logger.warning(f"No content received from earnings calendar page scrape at {EARNINGS_CALENDAR_URL}.")
                 self._set_in_cache(cache_key, [], 300) # Cache empty result for 5 mins
                 return []
 
-            parsed_earnings = self._parse_yahoo_earnings_page(earnings_data_rows)
+            parsed_earnings = self._parse_yahoo_earnings_page_from_content(page_content)
 
             if not parsed_earnings:
-                 logger.warning("No earnings events parsed from scraped data, though rows were present.")
+                 logger.warning("No earnings events parsed from scraped page content.")
                  self._set_in_cache(cache_key, [], 300) # Cache empty result for 5 mins
                  return []
 
             self._set_in_cache(cache_key, parsed_earnings, 21600)  # Cache for 6 hours
-            logger.info(f"Retrieved and parsed live earnings calendar with {len(parsed_earnings)} events.")
+            logger.info(f"Retrieved and parsed live earnings calendar with {len(parsed_earnings)} events using text parsing.")
             return parsed_earnings
 
         except Exception as e:
-            logger.exception(f"General error in get_earnings_calendar: {str(e)}") # Use logger.exception for stack trace
-            # Cache the error indication
+            logger.exception(f"General error in get_earnings_calendar (text_parse): {str(e)}") 
             self._set_in_cache(cache_key, [{"error": str(e)}], 300)
             return [{"error": str(e), "timestamp": datetime.now().isoformat()}]
 

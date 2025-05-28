@@ -1,29 +1,21 @@
-"""Firecrawl integration for scraping dynamic financial web content using MCP."""
+"""Firecrawl integration for scraping web content using Firecrawl's public REST API."""
 
 import json
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional
 from datetime import datetime
+import asyncio # Added for potential concurrent calls in future, though not strictly used by aiohttp per call
 
-import requests
+import aiohttp # Added
 from loguru import logger
-# Attempt to import MCP client, will be used if available
-try:
-    from mcp_client import mcp4_puppeteer_navigate, mcp4_puppeteer_evaluate
-except ImportError:
-    logger.warning(
-        "mcp_client not found. FirecrawlScraper will operate in simulation mode only."
-    )
-    mcp4_puppeteer_navigate = None
-    mcp4_puppeteer_evaluate = None
 
 from config import Config
 
 
 class FirecrawlScraper:
-    """Scraper using Firecrawl MCP Server for dynamic web content."""
+    """Scraper using Firecrawl's public REST API for web content."""
 
     def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None):
-        """Initialize the Firecrawl scraper using MCP.
+        """Initialize the Firecrawl scraper.
 
         Args:
             api_url: The Firecrawl API URL (defaults to Config.FIRECRAWL_API_URL).
@@ -31,457 +23,269 @@ class FirecrawlScraper:
         """
         self.api_url = api_url or Config.FIRECRAWL_API_URL
         self.api_key = api_key or Config.FIRECRAWL_API_KEY
-        self.mcp_server_name = Config.FIRECRAWL_MCP_SERVER
+        if not self.api_key:
+            logger.error("Firecrawl API key not configured. FirecrawlScraper will not work.")
+        if not self.api_url: # Should default in Config, but good to check
+             logger.error("Firecrawl API URL not configured. FirecrawlScraper will not work.")
+        # Ensure api_url does not end with /scrape, as it will be added.
+        if self.api_url and self.api_url.endswith("/scrape"):
+            self.api_url = self.api_url[:-7] # Remove /scrape
+        if self.api_url and self.api_url.endswith("/"):
+            self.api_url = self.api_url[:-1] # Remove trailing slash
+
+
         logger.info(
-            f"Firecrawl MCP scraper initialized with server: {self.mcp_server_name}"
+            f"FirecrawlScraper initialized to use API endpoint: {self.api_url}"
         )
 
-    def scrape_url(
-        self, url: str, selectors: Optional[Dict[str, str]] = None
+    async def scrape_url(
+        self, 
+        url_to_scrape: str, 
+        page_options: Optional[Dict] = None, 
+        extractor_options: Optional[Dict] = None,
+        timeout_seconds: int = 30 # Added timeout
     ) -> Dict[str, Any]:
-        """Scrape content from a URL using Firecrawl MCP integration.
+        """Scrape content from a URL using Firecrawl's /scrape endpoint.
 
         Args:
-            url: The URL to scrape.
-            selectors: CSS selectors to extract specific content.
-                       Example: {"title": "h1", "content": ".article-body"}
+            url_to_scrape: The URL to scrape.
+            page_options: Options for page loading (e.g., screenshot, headers).
+                          Defaults to {"onlyMainContent": True, "includeHtml": False}.
+            extractor_options: Options for LLM-based extraction (e.g., schema, model).
+                               Defaults to None.
+            timeout_seconds: Timeout for the API request.
 
         Returns:
-            A dictionary containing the scraped content.
+            A dictionary containing the scraped content or an error.
         """
+        if not self.api_key or not self.api_url:
+            return {"success": False, "url": url_to_scrape, "error": "Firecrawl API key or URL not configured."}
+
+        scrape_endpoint = f"{self.api_url}/scrape"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {"url": url_to_scrape}
+        payload["pageOptions"] = page_options if page_options is not None else {"onlyMainContent": True, "includeHtml": False}
+        
+        if extractor_options: # Only include if provided and not None/empty
+            payload["extractorOptions"] = extractor_options # Corrected key from "extractor" to "extractorOptions"
+
+        logger.info(f"Requesting Firecrawl scrape for URL: {url_to_scrape} with payload: {payload}")
+
         try:
-            logger.info(f"Scraping URL with Firecrawl MCP: {url}")
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(scrape_endpoint, json=payload, timeout=timeout_seconds) as response:
+                    if response.status == 200:
+                        response_data = await response.json()
+                        # Firecrawl's /scrape response structure: {"data": {"content": ..., "markdown": ..., "metadata": ...}}
+                        # or sometimes directly {"content": ..., "markdown": ...} if success is implied by 200
+                        
+                        data_content = response_data.get("data", response_data) # Handle both structures
 
-            # Prepare the puppeteer script for MCP
-            script = {"navigate": {"url": url, "waitUntil": "networkidle0"}}
-
-            # Add selector extraction if provided
-            extraction_scripts = {}
-            if selectors:
-                for key, selector in selectors.items():
-                    extraction_scripts[key] = (
-                        f"document.querySelector('{selector}')?.textContent.trim()"
-                    )
-
-            # If selectors provided, add them to the script
-            if extraction_scripts:
-                script["extract"] = extraction_scripts
-            else:
-                # Default extraction if no selectors provided
-                script["extract"] = {
-                    "title": "document.title",
-                    "content": "document.body.textContent.trim()",
-                }
-
-            # Call MCP Puppeteer to execute the script
-            mcp_result = self._call_mcp_puppeteer(url, script)
-
-            # Process the result
-            if mcp_result and "error" not in mcp_result and mcp_result.get("success", True): # MCP success
-                result = {
-                    "url": url,
-                    "timestamp": datetime.now().isoformat(),
-                    **mcp_result,
-                }
-                logger.info(f"Successfully scraped content from {url} using Firecrawl MCP.")
-            else: # MCP failed or returned an error structure
-                logger.warning(
-                    f"MCP scraping failed for {url}. Result: {mcp_result}. Falling back to simulation."
-                )
-                # Use selector keys for fallback if available, else pass selectors dict
-                selector_keys = list(selectors.keys()) if selectors else []
-                result = self._trigger_simulation_fallback(url, selector_keys, selectors)
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error scraping {url} with Firecrawl: {str(e)}")
+                        chosen_content = data_content.get("markdown", data_content.get("content", ""))
+                        metadata = data_content.get("metadata", {})
+                        
+                        logger.info(f"Successfully scraped URL: {url_to_scrape}")
+                        return {
+                            "success": True,
+                            "url": url_to_scrape,
+                            "content": chosen_content,
+                            "metadata": metadata, # Includes title, description, etc.
+                            "raw_data": data_content # Include for potential downstream use
+                        }
+                    else:
+                        error_details = await response.text()
+                        logger.error(
+                            f"Firecrawl API error for {url_to_scrape}: {response.status} - {error_details}"
+                        )
+                        return {
+                            "success": False,
+                            "url": url_to_scrape,
+                            "error": f"Firecrawl API Error: {response.status}",
+                            "details": error_details,
+                        }
+        except aiohttp.ClientError as e:
+            logger.error(f"aiohttp.ClientError scraping {url_to_scrape}: {str(e)}")
             return {
-                "url": url,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat(),
+                "success": False,
+                "url": url_to_scrape,
+                "error": "Client/Network Error",
+                "details": str(e),
+            }
+        except asyncio.TimeoutError: # Specifically catch timeout
+            logger.error(f"Timeout scraping {url_to_scrape} after {timeout_seconds} seconds.")
+            return {
+                "success": False,
+                "url": url_to_scrape,
+                "error": "Timeout",
+                "details": f"Scraping timed out after {timeout_seconds} seconds.",
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error scraping {url_to_scrape}: {str(e)}")
+            return {
+                "success": False,
+                "url": url_to_scrape,
+                "error": "Unexpected Error",
+                "details": str(e),
             }
 
-    def scrape_financial_news(
+    async def scrape_financial_news(
         self, sources: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
-        """Scrape financial news from multiple sources.
+        """Scrape financial news from main pages of multiple sources.
 
         Args:
             sources: List of news source identifiers (e.g., ["yahoo_finance", "cnbc"]).
-                    If None, all available sources are used.
+                     If None, default sources are used.
 
         Returns:
-            A list of dictionaries containing news articles.
+            A list of dictionaries, each containing the source name, URL, 
+            and scraped content of the main news page.
         """
         available_sources = {
             "yahoo_finance": "https://finance.yahoo.com/news/",
-            "cnbc": "https://www.cnbc.com/finance/",
-            "bloomberg": "https://www.bloomberg.com/markets",
+            "cnbc_finance": "https://www.cnbc.com/finance/", # Renamed to avoid conflict if key was just 'cnbc'
+            "bloomberg_markets": "https://www.bloomberg.com/markets",
+            # Add more sources as needed
         }
 
-        sources_to_scrape = sources or list(available_sources.keys())
+        sources_to_scrape_map = {}
+        if sources:
+            for source_key in sources:
+                if source_key in available_sources:
+                    sources_to_scrape_map[source_key] = available_sources[source_key]
+                else:
+                    logger.warning(f"Unknown news source key: {source_key}. Skipping.")
+        else: # Default to all available sources
+            sources_to_scrape_map = available_sources
+        
         results = []
+        
+        # Page options tailored for news landing pages - might want full content to find links
+        page_options_for_news_landing = {"onlyMainContent": False, "includeHtml": True} 
 
-        for source in sources_to_scrape:
-            if source in available_sources:
-                url = available_sources[source]
-                selectors = {
-                    "articles": "article, .js-stream-content",  # Generic selector for articles
-                    "title": "h1, h2, h3",
-                    "link": "a",
-                    "summary": "p",
-                }
-
-                try:
-                    result = self.scrape_url(url, selectors)
-                    if "error" not in result:
-                        results.extend(result.get("articles", []))
-                    else:
-                        logger.warning(f"Error scraping {source}: {result['error']}")
-
-                except Exception as e:
-                    logger.error(f"Error processing {source}: {str(e)}")
+        for source_name, url in sources_to_scrape_map.items():
+            logger.info(f"Scraping main news page for source: {source_name} from {url}")
+            scrape_result = await self.scrape_url(url, page_options=page_options_for_news_landing)
+            
+            if scrape_result.get("success"):
+                results.append({
+                    "source_name": source_name,
+                    "url": url,
+                    "content": scrape_result.get("content"), # This will be markdown or text of the main page
+                    "metadata": scrape_result.get("metadata", {}),
+                    "raw_html": scrape_result.get("raw_data", {}).get("html") if page_options_for_news_landing.get("includeHtml") else None
+                })
             else:
-                logger.warning(f"Unknown source: {source}")
-
+                logger.warning(f"Failed to scrape news source: {source_name} from {url}. Error: {scrape_result.get('error')}")
+                results.append({
+                    "source_name": source_name,
+                    "url": url,
+                    "error": scrape_result.get("error"),
+                    "details": scrape_result.get("details")
+                })
+        
+        logger.info(f"Completed scraping of {len(results)} financial news main pages.")
         return results
 
-    def scrape_earnings_report(self, ticker: str) -> Dict[str, Any]:
-        """Scrape the latest earnings report for a company.
+    async def scrape_earnings_report(self, ticker: str) -> Dict[str, Any]:
+        """Scrape the main content of an earnings report page for a company.
 
         Args:
             ticker: The stock ticker symbol.
 
         Returns:
-            A dictionary containing earnings data.
+            A dictionary containing the ticker, URL, scraped content, metadata, and source.
         """
-        # Construct URL for earnings information
-        url = f"https://finance.yahoo.com/quote/{ticker}/earnings"
+        # Construct URL for earnings information (example: Yahoo Finance)
+        # This might need to be made more robust or configurable if different sources are used.
+        earnings_page_url = f"https://finance.yahoo.com/quote/{ticker}/analysis" # Changed to /analysis for potentially richer text
+        # earnings_page_url = f"https://finance.yahoo.com/quote/{ticker}/financials"
+        # earnings_page_url = f"https://seekingalpha.com/symbol/{ticker}/earnings" # Example for another source
+        
+        logger.info(f"Scraping earnings report page for ticker: {ticker} from {earnings_page_url}")
 
-        # Define selectors for earnings data
-        selectors = {
-            "earnings_table": "table",
-            "earnings_date": ".earnings-date",
-            "eps": ".eps-actual",
-            "eps_estimate": ".eps-estimate",
-            "revenue": ".revenue-actual",
-            "revenue_estimate": ".revenue-estimate",
-        }
+        # Standard page options for content extraction
+        page_options_for_earnings = {"onlyMainContent": True, "includeHtml": False}
 
-        try:
-            # Scrape the earnings page
-            result = self.scrape_url(url, selectors)
+        scrape_result = await self.scrape_url(earnings_page_url, page_options=page_options_for_earnings)
 
-            if "error" not in result:
-                # Process the result
-                return {
-                    "ticker": ticker,
-                    "earnings_data": result,
-                    "source": url,
-                    "timestamp": datetime.now().isoformat(),
-                }
-            else:
-                logger.warning(
-                    f"Error scraping earnings for {ticker}: {result['error']}"
-                )
-                return {
-                    "ticker": ticker,
-                    "error": result["error"],
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-        except Exception as e:
-            logger.error(f"Error processing earnings for {ticker}: {str(e)}")
+        if scrape_result.get("success"):
             return {
                 "ticker": ticker,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat(),
+                "url": earnings_page_url,
+                "content": scrape_result.get("content"), # Markdown or text content
+                "metadata": scrape_result.get("metadata", {}),
+                "source": "Firecrawl" 
             }
-
-    def _simulate_yahoo_finance(
-        self, url: str, selector_keys: Optional[List[str]] = None, selectors: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
-        """Simulate a response from Yahoo Finance.
-
-        Args:
-            url: The URL being scraped.
-            selectors: The selectors used for scraping.
-
-        Returns:
-            A simulated response dictionary.
-        """
-        return {
-            "url": url,
-            "articles": [
-                {
-                    "title": "Markets close higher as tech stocks rally",
-                    "link": "https://finance.yahoo.com/news/markets-close-higher-tech-stocks-rally",
-                    "summary": "Major indices closed higher today as technology stocks led a broad market rally...",
-                    "source": "Yahoo Finance",
-                    "timestamp": datetime.now().isoformat(),
-                },
-                {
-                    "title": "Federal Reserve signals potential rate cuts",
-                    "link": "https://finance.yahoo.com/news/federal-reserve-signals-potential-rate-cuts",
-                    "summary": "The Federal Reserve indicated it may consider interest rate cuts later this year...",
-                    "source": "Yahoo Finance",
-                    "timestamp": datetime.now().isoformat(),
-                },
-                {
-                    "title": "Asian markets mixed as investors await economic data",
-                    "link": "https://finance.yahoo.com/news/asian-markets-mixed-investors-await-economic-data",
-                    "summary": "Asian stock markets were mixed on Wednesday as investors awaited key economic reports...",
-                    "source": "Yahoo Finance",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ],
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    def _simulate_cnbc(
-        self, url: str, selector_keys: Optional[List[str]] = None, selectors: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
-        """Simulate a response from CNBC.
-
-        Args:
-            url: The URL being scraped.
-            selectors: The selectors used for scraping.
-
-        Returns:
-            A simulated response dictionary.
-        """
-        return {
-            "url": url,
-            "articles": [
-                {
-                    "title": "S&P 500 hits new record as tech shares surge",
-                    "link": "https://www.cnbc.com/sp-500-hits-new-record-tech-shares-surge",
-                    "summary": "The S&P 500 reached a new all-time high on Tuesday, driven by strong performance in technology stocks...",
-                    "source": "CNBC",
-                    "timestamp": datetime.now().isoformat(),
-                },
-                {
-                    "title": "Treasury yields fall as inflation concerns ease",
-                    "link": "https://www.cnbc.com/treasury-yields-fall-inflation-concerns-ease",
-                    "summary": "Treasury yields declined on Tuesday as new data suggested inflation pressures may be moderating...",
-                    "source": "CNBC",
-                    "timestamp": datetime.now().isoformat(),
-                },
-                {
-                    "title": "Asian tech stocks face pressure amid regulatory concerns",
-                    "link": "https://www.cnbc.com/asian-tech-stocks-face-pressure-regulatory-concerns",
-                    "summary": "Technology stocks in Asian markets faced selling pressure as regulators announced new oversight measures...",
-                    "source": "CNBC",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ],
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    def _simulate_bloomberg(
-        self, url: str, selector_keys: Optional[List[str]] = None, selectors: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
-        """Simulate a response from Bloomberg.
-
-        Args:
-            url: The URL being scraped.
-            selectors: The selectors used for scraping.
-
-        Returns:
-            A simulated response dictionary.
-        """
-        return {
-            "url": url,
-            "articles": [
-                {
-                    "title": "Global Markets Rally as Central Banks Signal Support",
-                    "link": "https://www.bloomberg.com/markets/global-markets-rally-central-banks",
-                    "summary": "Global equity markets rallied after major central banks signaled continued support for economic recovery...",
-                    "source": "Bloomberg",
-                    "timestamp": datetime.now().isoformat(),
-                },
-                {
-                    "title": "Asian Tech Stocks See Selloff on Regulatory Concerns",
-                    "link": "https://www.bloomberg.com/markets/asian-tech-stocks-selloff",
-                    "summary": "Technology stocks across Asia experienced a broad selloff as regulators in multiple countries announced new oversight measures...",
-                    "source": "Bloomberg",
-                    "timestamp": datetime.now().isoformat(),
-                },
-                {
-                    "title": "Earnings Surprises: Tech Companies Outperform Expectations",
-                    "link": "https://www.bloomberg.com/markets/earnings-surprises-tech-companies",
-                    "summary": "Several major technology companies reported quarterly earnings that significantly exceeded analyst expectations...",
-                    "source": "Bloomberg",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ],
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    def _call_mcp_puppeteer(self, url: str, script: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the MCP Puppeteer server to execute web scraping scripts.
-
-        Args:
-            url: The URL to scrape
-            script: The script containing navigation and extraction instructions
-
-        Returns:
-            Dictionary containing the extracted data or error information
-        """
-        if not mcp4_puppeteer_navigate or not mcp4_puppeteer_evaluate:
-            logger.warning("MCP client not available. Triggering simulation fallback for _call_mcp_puppeteer.")
-            # Pass selector keys if available from the script, else an empty list
-            selector_keys = list(script.get("extract", {}).keys()) if "extract" in script else []
-            return self._trigger_simulation_fallback(url, selector_keys)
-
-        try:
-            logger.info(f"Calling MCP Puppeteer for URL: {url}")
-            navigate_options = script.get("navigate", {})
-            navigate_result = self._mcp_puppeteer_navigate(url, navigate_options)
-
-            if navigate_result and navigate_result.get("success"):
-                if "extract" in script:
-                    extracted_data = {}
-                    errors_in_extraction = False
-                    for key, js_script in script["extract"].items():
-                        eval_result = self._mcp_puppeteer_evaluate(js_script)
-                        if eval_result is None:  # None indicates error
-                            logger.warning(f"MCP script evaluation failed for selector key: {key} on {url}")
-                            errors_in_extraction = True
-                            break
-                        extracted_data[key] = eval_result
-                    
-                    if errors_in_extraction:
-                        logger.warning(f"Errors occurred during MCP script evaluation for {url}. Falling back.")
-                        selector_keys = list(script.get("extract", {}).keys())
-                        return self._trigger_simulation_fallback(url, selector_keys)
-                    else:
-                        logger.info(f"MCP extraction successful for {url}.")
-                        return {"success": True, **extracted_data} # Ensure success flag
-                else:
-                    # Navigation successful, no extraction scripts
-                    return {
-                        "success": True,
-                        "message": f"Navigation to {url} successful, no extraction specified.",
-                        "page_content": navigate_result.get("page_content", "") # Include page content if available
-                    }
-            else:
-                logger.warning(f"MCP navigation failed for {url}. Result: {navigate_result}. Falling back.")
-                selector_keys = list(script.get("extract", {}).keys()) if "extract" in script else []
-                return self._trigger_simulation_fallback(url, selector_keys)
-
-        except Exception as e:
-            logger.error(f"Error in MCP Puppeteer execution for {url}: {str(e)}")
-            selector_keys = list(script.get("extract", {}).keys()) if "extract" in script else []
-            return self._trigger_simulation_fallback(url, selector_keys, error_message=str(e))
-
-    def _trigger_simulation_fallback(self, url: str, selector_keys: Optional[List[str]] = None, selectors_dict: Optional[Dict[str, str]] = None, error_message: Optional[str] = None) -> Dict[str, Any]:
-        """Triggers the appropriate simulation based on URL and returns a structured error if no simulation matches."""
-        logger.info(f"Triggering simulation fallback for {url}. Selector keys: {selector_keys}. Error: {error_message}")
-        # The 'selectors' argument for simulation methods was originally the dict,
-        # but selector_keys might be more useful for some fallback logic if needed.
-        # For now, we pass the original selectors_dict if available, else None.
-        
-        simulated_data = None
-        if "finance.yahoo.com" in url:
-            simulated_data = self._simulate_yahoo_finance(url, selectors=selectors_dict)
-        elif "cnbc.com" in url:
-            simulated_data = self._simulate_cnbc(url, selectors=selectors_dict)
-        elif "bloomberg.com" in url:
-            simulated_data = self._simulate_bloomberg(url, selectors=selectors_dict)
-        
-        if simulated_data:
-            # Ensure the simulation result includes a note about it being a fallback
-            simulated_data["fallback_simulation"] = True
-            simulated_data["original_mcp_error"] = error_message if error_message else "MCP call failed or not available."
-            return simulated_data
         else:
-            # Default generic error if no specific simulation matches
+            logger.warning(f"Failed to scrape earnings report for {ticker} from {earnings_page_url}. Error: {scrape_result.get('error')}")
             return {
-                "url": url,
-                "error": error_message or "MCP call failed and no specific simulation available.",
-                "timestamp": datetime.now().isoformat(),
-                "title": f"Simulated error for {url}",
-                "content": "MCP call failed, and no specific simulation fallback was found for this URL.",
-                "fallback_simulation": True,
-                "success": False # Explicitly mark as not successful
+                "ticker": ticker,
+                "url": earnings_page_url,
+                "error": scrape_result.get("error"),
+                "details": scrape_result.get("details"),
+                "source": "Firecrawl"
             }
-
-    def _mcp_puppeteer_navigate(
-        self, url: str, options: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Navigate to a URL using MCP Puppeteer.
-
-        Args:
-            url: The URL to navigate to
-            options: Additional navigation options (e.g., waitUntil)
-
-        Returns:
-            Response from the navigation operation, including success status.
-        """
-        if not mcp4_puppeteer_navigate:
-            logger.warning("mcp4_puppeteer_navigate not available. Cannot perform live navigation.")
-            return {"error": "MCP client (navigate) not available", "success": False}
-        
-        options = options or {}
-        logger.info(f"Attempting MCP navigation to URL: {url} with options: {options}")
-        
-        try:
-            nav_options = {"url": url, "allowDangerous": False}
-            nav_options.update(options) # Merge provided options
-            
-            # Assuming mcp4_puppeteer_navigate might take an API key,
-            # but current structure relies on global MCP config or client-side env vars.
-            # If self.api_key is needed, it should be passed here.
-            # e.g., result = mcp4_puppeteer_navigate(nav_options, api_key=self.api_key)
-            result = mcp4_puppeteer_navigate(nav_options)
-
-            if result and result.get("success"):
-                logger.info(f"MCP navigation to {url} successful.")
-                # Return structure compatible with _call_mcp_puppeteer expectations
-                return {"success": True, "page_content": result.get("content")}
-            else:
-                logger.error(f"MCP navigation to {url} failed. Raw MCP Result: {result}")
-                return {"error": f"MCP navigation failed. Details: {result}", "success": False}
-        except Exception as e:
-            logger.error(f"Exception during MCP navigation for {url}: {str(e)}")
-            return {"error": str(e), "success": False}
-
-    def _mcp_puppeteer_evaluate(self, script: str) -> Optional[Any]:
-        """Evaluate JavaScript in the browser context using MCP Puppeteer.
-
-        Args:
-            script: JavaScript to execute
-
-        Returns:
-            Result of the JavaScript evaluation, or None if an error occurs.
-        """
-        if not mcp4_puppeteer_evaluate:
-            logger.warning("mcp4_puppeteer_evaluate not available. Cannot perform live evaluation.")
-            return None # Indicates error
-
-        logger.info(f"Attempting MCP script evaluation: {script[:100]}...")
-        try:
-            # Similar to navigate, if API key needed per call, it would be passed here.
-            result = mcp4_puppeteer_evaluate({"script": script})
-
-            if result and result.get("success"): # Adapt based on actual mcp_client result structure
-                logger.info(f"MCP script evaluation successful.")
-                return result.get("result") # This is the data extracted by the script
-            else:
-                logger.error(f"MCP script evaluation failed. Raw MCP Result: {result}")
-                return None # Indicates error
-        except Exception as e:
-            logger.error(f"Exception during MCP script evaluation: {str(e)}")
-            return None # Indicates error
 
 
 if __name__ == "__main__":
-    # Example usage
-    scraper = FirecrawlScraper()
-    news = scraper.scrape_financial_news(["yahoo_finance"])
-    for article in news:
-        print(f"Title: {article['title']}")
-        print(f"Source: {article['source']}")
-        print("---")
+    # Example usage (requires running an asyncio event loop)
+    async def main():
+        scraper = FirecrawlScraper()
+
+        # Test scrape_url
+        # test_url = "https://www.cnbc.com/2024/03/10/stock-market-today-live-updates.html" # Example article
+        # test_url = "https://finance.yahoo.com/news/"
+        # print(f"\n--- Scraping URL: {test_url} ---")
+        # # Example with custom pageOptions (e.g., to get HTML for parsing links)
+        # # page_options_custom = {"includeHtml": True, "onlyMainContent": False} 
+        # # url_data = await scraper.scrape_url(test_url, page_options=page_options_custom)
+        # url_data = await scraper.scrape_url(test_url)
+        # if url_data.get("success"):
+        #     print(f"Content (first 500 chars): {url_data.get('content', '')[:500]}...")
+        #     print(f"Metadata: {url_data.get('metadata')}")
+        # else:
+        #     print(f"Error scraping {test_url}: {url_data.get('error')} - {url_data.get('details')}")
+
+        # Test scrape_financial_news
+        print("\n--- Scraping Financial News Main Pages ---")
+        news_results = await scraper.scrape_financial_news(["yahoo_finance", "bloomberg_markets"])
+        for news_item in news_results:
+            if news_item.get("error"):
+                print(f"Error for {news_item['source_name']} ({news_item['url']}): {news_item['error']}")
+            else:
+                print(f"Source: {news_item['source_name']}, URL: {news_item['url']}")
+                # print(f"  Content (first 200 chars): {news_item.get('content', '')[:200]}...")
+                if news_item.get("raw_html"):
+                     print(f"  HTML (first 300 chars): {news_item.get('raw_html', '')[:300]}...")
+                else:
+                     print(f"  Content (first 200 chars): {news_item.get('content', '')[:200]}...")
+                print(f"  Metadata: {news_item.get('metadata')}")
+            print("---")
+
+        # Test scrape_earnings_report
+        # test_ticker = "AAPL"
+        # print(f"\n--- Scraping Earnings Report for {test_ticker} ---")
+        # earnings_data = await scraper.scrape_earnings_report(test_ticker)
+        # if earnings_data.get("error"):
+        #     print(f"Error for {test_ticker}: {earnings_data['error']}")
+        # else:
+        #     print(f"Ticker: {earnings_data['ticker']}, URL: {earnings_data['url']}")
+        #     print(f"  Content (first 500 chars): {earnings_data.get('content', '')[:500]}...")
+        #     print(f"  Metadata: {earnings_data.get('metadata')}")
+        # print("---")
+
+    # Run the main async function
+    # asyncio.run(main())
+    # If running in an environment where asyncio loop is already running (e.g. Jupyter notebook with !python script.py)
+    # then use:
+    # loop = asyncio.get_event_loop()
+    # if loop.is_running():
+    #     loop.create_task(main())
+    # else:
+    #     asyncio.run(main())
+    pass # Comment out pass and uncomment loop logic to run
