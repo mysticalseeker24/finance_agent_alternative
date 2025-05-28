@@ -66,12 +66,21 @@ class MarketBriefResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Initialize the orchestrator and agents on startup."""
-    logger.info("Initializing agents...")
-    try:
-        status = await orchestrator.initialize_agents()
-        logger.info(f"Agent initialization status: {status}")
-    except Exception as e:
-        logger.error(f"Error initializing agents: {str(e)}")
+    logger.info("Starting Finance Agent API...")
+    
+    # Check for valid configuration
+    if not Config.validate():
+        logger.warning("Invalid configuration! Prompting for missing API keys...")
+        Config.check_and_prompt_for_missing_keys()
+        
+        # Verify configuration again after prompting
+        if not Config.validate():
+            logger.error("Still missing required API keys. Some functionality will be limited.")
+    
+    # Initialize the orchestrator
+    await orchestrator.initialize()
+    
+    logger.info("Startup completed!")
 
 # API endpoints
 @app.get("/")

@@ -16,6 +16,30 @@ from loguru import logger
 
 from config import Config
 
+# Check configuration and prompt for missing API keys
+if not Config.validate():
+    st.warning("Missing required API keys. Please provide them to enable full functionality.")
+    # Only prompt for keys in streamlit if they're still missing after potential CLI prompts
+    missing_api_groups = []
+    for group_name, keys in Config.REQUIRED_API_GROUPS.items():
+        if not any(getattr(Config, key) for key in keys):
+            missing_api_groups.append((group_name, keys))
+    
+    if missing_api_groups:
+        st.error("Please provide at least one API key for each required service:")
+        for group_name, keys in missing_api_groups:
+            with st.expander(f"Configure {group_name.upper()} API Keys"):
+                for key in keys:
+                    api_key = st.text_input(f"Enter your {key}:", type="password", key=f"input_{key}")
+                    if api_key and st.button(f"Save {key}", key=f"save_{key}"):
+                        # Save to environment variables and update Config
+                        os.environ[key] = api_key
+                        setattr(Config, key, api_key)
+                        # Save to .env file
+                        Config._save_key_to_env_file(key, api_key)
+                        st.success(f"{key} saved successfully! Please refresh the page.")
+                        st.experimental_rerun()
+
 # Set page configuration
 st.set_page_config(
     page_title="Finance Agent",
