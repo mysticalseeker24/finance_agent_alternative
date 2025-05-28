@@ -20,6 +20,14 @@ from loguru import logger
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
+# Set page configuration first - this must be the first Streamlit command
+st.set_page_config(
+    page_title="Finance Agent",
+    page_icon="💹",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 from config import Config
 
 # Check configuration and prompt for missing API keys
@@ -45,14 +53,6 @@ if not Config.validate():
                         Config._save_key_to_env_file(key, api_key)
                         st.success(f"{key} saved successfully! Please refresh the page.")
                         st.experimental_rerun()
-
-# Set page configuration
-st.set_page_config(
-    page_title="Finance Agent",
-    page_icon="💹",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Define API endpoint
 API_URL = f"http://{Config.FASTAPI_HOST}:{Config.FASTAPI_PORT}"
