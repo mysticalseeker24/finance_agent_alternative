@@ -23,6 +23,10 @@ class Config:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
     FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
     
+    # MCP Configuration
+    FIRECRAWL_MCP_SERVER = os.getenv("FIRECRAWL_MCP_SERVER", "puppeteer")
+    FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://firecrawl-api.example.com")
+    
     # LLM Provider
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
     LOCAL_MODEL_PATH = os.getenv("LOCAL_MODEL_PATH")

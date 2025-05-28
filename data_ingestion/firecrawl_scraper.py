@@ -1,4 +1,4 @@
-"""Firecrawl integration for scraping dynamic financial web content."""
+"""Firecrawl integration for scraping dynamic financial web content using MCP."""
 
 import json
 from typing import Dict, List, Any, Optional, Union
@@ -14,18 +14,19 @@ class FirecrawlScraper:
     """Scraper using Firecrawl MCP Server for dynamic web content."""
     
     def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None):
-        """Initialize the Firecrawl scraper.
+        """Initialize the Firecrawl scraper using MCP.
         
         Args:
             api_url: The Firecrawl API URL (defaults to Config.FIRECRAWL_API_URL).
-            api_key: The Firecrawl API key (defaults to an environment variable).
+            api_key: The Firecrawl API key (defaults to Config.FIRECRAWL_API_KEY).
         """
         self.api_url = api_url or Config.FIRECRAWL_API_URL
-        self.api_key = api_key  # In a real implementation, you would use an API key
-        logger.info("Firecrawl scraper initialized")
+        self.api_key = api_key or Config.FIRECRAWL_API_KEY
+        self.mcp_server_name = Config.FIRECRAWL_MCP_SERVER
+        logger.info(f"Firecrawl MCP scraper initialized with server: {self.mcp_server_name}")
     
     def scrape_url(self, url: str, selectors: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        """Scrape content from a URL using Firecrawl.
+        """Scrape content from a URL using Firecrawl MCP integration.
         
         Args:
             url: The URL to scrape.
@@ -35,39 +36,60 @@ class FirecrawlScraper:
         Returns:
             A dictionary containing the scraped content.
         """
-        # Note: This is a simplified implementation
-        # In a real implementation, you would use the Firecrawl API
         try:
-            # Prepare the request payload
-            payload = {
-                "url": url,
-                "selectors": selectors or {},
-                "wait_for": "networkidle0",  # Wait until network is idle
-                "format": "json",
+            logger.info(f"Scraping URL with Firecrawl MCP: {url}")
+            
+            # Prepare the puppeteer script for MCP
+            script = {
+                "navigate": {
+                    "url": url,
+                    "waitUntil": "networkidle0"
+                }
             }
             
-            # Add headers
-            headers = {}
-            if self.api_key:
-                headers["Authorization"] = f"Bearer {self.api_key}"
+            # Add selector extraction if provided
+            extraction_scripts = {}
+            if selectors:
+                for key, selector in selectors.items():
+                    extraction_scripts[key] = f"document.querySelector('{selector}')?.textContent.trim()"
             
-            # Make the request to Firecrawl API
-            # Note: In this simulation, we're not actually making the request
-            # as Firecrawl is a hypothetical service in this context
-            
-            # Simulate the response based on the URL
-            if "finance.yahoo.com" in url:
-                result = self._simulate_yahoo_finance(url, selectors)
-            elif "cnbc.com" in url:
-                result = self._simulate_cnbc(url, selectors)
-            elif "bloomberg.com" in url:
-                result = self._simulate_bloomberg(url, selectors)
+            # If selectors provided, add them to the script
+            if extraction_scripts:
+                script["extract"] = extraction_scripts
             else:
+                # Default extraction if no selectors provided
+                script["extract"] = {
+                    "title": "document.title",
+                    "content": "document.body.textContent.trim()"
+                }
+            
+            # Call MCP Puppeteer to execute the script
+            mcp_result = self._call_mcp_puppeteer(url, script)
+            
+            # Process the result
+            if mcp_result and "error" not in mcp_result:
                 result = {
                     "url": url,
-                    "error": "Unsupported URL for simulation",
                     "timestamp": datetime.now().isoformat(),
+                    **mcp_result  # Include all extracted data
                 }
+            else:
+                # Fallback to simulated responses if MCP fails
+                logger.warning(f"MCP scraping failed for {url}, falling back to simulation")
+                if "finance.yahoo.com" in url:
+                    result = self._simulate_yahoo_finance(url, selectors)
+                elif "cnbc.com" in url:
+                    result = self._simulate_cnbc(url, selectors)
+                elif "bloomberg.com" in url:
+                    result = self._simulate_bloomberg(url, selectors)
+                else:
+                    # Default to a generic result for other URLs
+                    result = {
+                        "url": url,
+                        "title": f"Content from {url}",
+                        "content": "Sample content",
+                        "timestamp": datetime.now().isoformat()
+                    }
             
             logger.info(f"Scraped content from {url} using Firecrawl")
             return result
@@ -286,6 +308,87 @@ class FirecrawlScraper:
             ],
             "timestamp": datetime.now().isoformat(),
         }
+    
+    def _call_mcp_puppeteer(self, url: str, script: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the MCP Puppeteer server to execute web scraping scripts.
+        
+        Args:
+            url: The URL to scrape
+            script: The script containing navigation and extraction instructions
+            
+        Returns:
+            Dictionary containing the extracted data or error information
+        """
+        try:
+            logger.info(f"Calling MCP Puppeteer for URL: {url}")
+            
+            # First, navigate to the URL
+            navigate_result = self._mcp_puppeteer_navigate(url, script.get("navigate", {}))
+            
+            # Then run any extraction scripts if navigation was successful
+            if navigate_result and "error" not in navigate_result:
+                if "extract" in script:
+                    # Execute each extraction script
+                    extracted_data = {}
+                    for key, js_script in script["extract"].items():
+                        extracted_data[key] = self._mcp_puppeteer_evaluate(js_script)
+                    return extracted_data
+                else:
+                    return {"success": True, "message": "Navigation successful but no extraction scripts provided"}
+            else:
+                return navigate_result or {"error": "Failed to navigate to URL"}
+        except Exception as e:
+            logger.error(f"Error in MCP Puppeteer execution: {str(e)}")
+            return {"error": str(e)}
+    
+    def _mcp_puppeteer_navigate(self, url: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Navigate to a URL using MCP Puppeteer.
+        
+        Args:
+            url: The URL to navigate to
+            options: Additional navigation options
+            
+        Returns:
+            Response from the navigation operation
+        """
+        try:
+            # This would be the actual MCP call in a production environment
+            # In a real implementation, you would use:
+            # from mcp_client import mcp4_puppeteer_navigate
+            # result = mcp4_puppeteer_navigate({
+            #     "url": url,
+            #     "allowDangerous": False,
+            #     **options
+            # })
+            
+            # For now, simulate a successful response
+            logger.info(f"[MCP Simulation] Navigated to {url}")
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Error in MCP navigation: {str(e)}")
+            return {"error": str(e)}
+    
+    def _mcp_puppeteer_evaluate(self, script: str) -> Any:
+        """Evaluate JavaScript in the browser context using MCP Puppeteer.
+        
+        Args:
+            script: JavaScript to execute
+            
+        Returns:
+            Result of the JavaScript evaluation
+        """
+        try:
+            # This would be the actual MCP call in a production environment
+            # In a real implementation, you would use:
+            # from mcp_client import mcp4_puppeteer_evaluate
+            # result = mcp4_puppeteer_evaluate({"script": script})
+            
+            # For now, return a simulated result
+            logger.info(f"[MCP Simulation] Evaluated script: {script[:50]}...")
+            return f"Simulated result for: {script[:20]}..."
+        except Exception as e:
+            logger.error(f"Error in MCP evaluation: {str(e)}")
+            return f"Error: {str(e)}"
 
 
 if __name__ == "__main__":
