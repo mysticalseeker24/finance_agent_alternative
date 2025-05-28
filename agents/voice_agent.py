@@ -36,13 +36,16 @@ class VoiceAgent(BaseAgent):
             True if initialization is successful, False otherwise.
         """
         try:
-            # Initialize Whisper model
-            # Use 'base' model for faster processing, 'medium' or 'large' for better accuracy
-            self.stt_model = await asyncio.to_thread(whisper.load_model, "base")
-            logger.info("Initialized Whisper STT model")
+            # Load the Whisper model for Hindi and English support
+            import whisper
+            
+            # Use the medium model for better multilingual support
+            # Small and base models have limited support for non-English languages
+            self.stt_model = await asyncio.to_thread(whisper.load_model, "medium")
+            logger.info("Initialized Whisper speech-to-text model with Hindi and English support")
             return True
         except Exception as e:
-            logger.error(f"Error initializing STT model: {str(e)}")
+            logger.error(f"Error initializing speech-to-text model: {str(e)}")
             return False
     
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -99,16 +102,17 @@ class VoiceAgent(BaseAgent):
         else:
             return {"error": f"Unknown operation: {operation}"}
     
-    async def _speech_to_text(self, audio_path: Optional[str] = None, audio_bytes: Optional[Union[bytes, BinaryIO]] = None, language: str = "en") -> Dict[str, Any]:
-        """Convert speech to text using Whisper.
+    async def _speech_to_text(self, audio_path: Optional[str] = None, audio_bytes: Optional[Union[bytes, BinaryIO]] = None, language: str = "auto") -> Dict[str, Any]:
+        """Convert speech to text using Whisper with support for Hindi and English.
         
         Args:
             audio_path: Path to the audio file.
             audio_bytes: Audio data as bytes or file-like object.
-            language: Language code (default: 'en' for English).
+            language: Language code (default: 'auto' for automatic detection).
+                      Can be 'en' for English, 'hi' for Hindi, or 'auto'.
             
         Returns:
-            Transcription result.
+            Transcription result with detected language.
         """
         try:
             # Initialize STT model if not already done
@@ -134,11 +138,15 @@ class VoiceAgent(BaseAgent):
                     temp_file.close()
                     file_path = temp_file.name
                 
+                logger.info(f"Transcribing audio with language setting: {language}")
+                
                 # Transcribe audio using Whisper
+                # For 'auto', let Whisper detect the language
+                # For specific languages, use the provided code
                 result = await asyncio.to_thread(
                     self.stt_model.transcribe,
                     file_path,
-                    language=language
+                    language=None if language == "auto" else language
                 )
                 
                 # Extract transcription and other details
@@ -181,8 +189,6 @@ class VoiceAgent(BaseAgent):
             Text-to-speech result with audio data or path.
         """
         try:
-            # Use Sarvam AI TTS API (simulated)
-            # In a real implementation, you would use the actual API
             voice = voice or Config.VOICE_MODEL
             
             # Generate a filename if output_path is not provided
@@ -193,27 +199,46 @@ class VoiceAgent(BaseAgent):
             # Ensure directory exists
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
-            # Simulate TTS API call and save to file
-            # In a real implementation, you would use the actual API
-            logger.info(f"Simulating TTS for text (length: {len(text)} chars) using voice: {voice}")
+            # First try Sarvam AI if API key is available
+            if Config.SARVAM_AI_API_KEY:
+                logger.info(f"Using Sarvam AI TTS for text (length: {len(text)} chars) with voice: {voice}")
+                result = await self._sarvam_ai_tts(text, voice, output_path)
+                if not result.get("error"):
+                    return result
+                logger.warning(f"Sarvam AI TTS failed: {result.get('error')}. Trying ElevenLabs...")
             
-            # Create a mock MP3 file (1 second of silence)
-            # In a real implementation, this would be the actual audio data
+            # Fall back to ElevenLabs if Sarvam AI failed or not configured
+            if Config.ELEVENLABS_API_KEY:
+                logger.info(f"Using ElevenLabs TTS for text (length: {len(text)} chars) with voice: {voice}")
+                result = await self._elevenlabs_tts(text, voice, output_path)
+                if not result.get("error"):
+                    return result
+                logger.warning(f"ElevenLabs TTS failed: {result.get('error')}")
+            
+            # If both services failed or no API keys are available, return an error
+            if not Config.SARVAM_AI_API_KEY and not Config.ELEVENLABS_API_KEY:
+                error_msg = "No TTS service API keys configured. Please provide either SARVAM_AI_API_KEY or ELEVENLABS_API_KEY."
+            else:
+                error_msg = "All configured TTS services failed."
+            
+            logger.error(error_msg)
+            return {"error": error_msg}
+            # Fallback if both APIs fail but we still need to return something
+            # This would only happen in testing/development when APIs are unavailable
             silence = AudioSegment.silent(duration=1000)  # 1 second of silence
             silence.export(output_path, format="mp3")
             
-            # Prepare result with local file path and URL (if serving files)
-            result = {
+            # Generate a URL path for API access
+            audio_url = f"/audio/{os.path.basename(output_path)}"
+            
+            return {
+                "error": error_msg,
+                "audio_path": output_path,
+                "audio_url": audio_url,
                 "text": text,
                 "voice": voice,
-                "audio_path": output_path,
-                "audio_url": f"file://{os.path.abspath(output_path)}",  # Local file URL
-                "format": "mp3",
-                "duration": 1.0,  # Mock duration in seconds
+                "duration_seconds": 1.0  # Mock duration
             }
-            
-            logger.info(f"Generated speech audio saved to: {output_path}")
-            return result
         
         except Exception as e:
             logger.error(f"Error in text to speech: {str(e)}")
@@ -337,3 +362,138 @@ class VoiceAgent(BaseAgent):
             }
         }
         return await self.run(request)
+        
+    async def _sarvam_ai_tts(self, text: str, voice: str, output_path: str) -> Dict[str, Any]:
+        """Convert text to speech using Sarvam AI API.
+        
+        Args:
+            text: The text to convert to speech.
+            voice: Voice model to use.
+            output_path: Path to save the audio file.
+            
+        Returns:
+            Result with audio data or path.
+        """
+        try:
+            import aiohttp
+            
+            # Sarvam AI API endpoint and headers
+            url = "https://api.sarvam.ai/v1/tts"
+            headers = {
+                "Authorization": f"Bearer {Config.SARVAM_AI_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            # Request payload
+            payload = {
+                "text": text,
+                "model": voice,  # Default is 'meera'
+                "voice_preset": "default",
+                "audioformat": "mp3"
+            }
+            
+            # Make API request
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        # Save audio file
+                        audio_data = await response.read()
+                        with open(output_path, "wb") as f:
+                            f.write(audio_data)
+                        
+                        # Get audio duration
+                        audio = AudioSegment.from_file(output_path)
+                        duration_seconds = len(audio) / 1000.0
+                        
+                        # Generate URL for API access
+                        audio_url = f"/audio/{os.path.basename(output_path)}"
+                        
+                        return {
+                            "audio_path": output_path,
+                            "audio_url": audio_url,
+                            "text": text,
+                            "voice": voice,
+                            "duration_seconds": duration_seconds
+                        }
+                    else:
+                        error_message = f"Sarvam AI API error: {response.status} - {await response.text()}"
+                        logger.error(error_message)
+                        return {"error": error_message}
+                        
+        except Exception as e:
+            logger.error(f"Error in Sarvam AI TTS: {str(e)}")
+            return {"error": str(e)}
+    
+    async def _elevenlabs_tts(self, text: str, voice: str, output_path: str) -> Dict[str, Any]:
+        """Convert text to speech using ElevenLabs API.
+        
+        Args:
+            text: The text to convert to speech.
+            voice: Voice model to use.
+            output_path: Path to save the audio file.
+            
+        Returns:
+            Result with audio data or path.
+        """
+        try:
+            import aiohttp
+            
+            # ElevenLabs voice mapping - map our voice name to ElevenLabs voice IDs
+            # In a production system, you'd have a more comprehensive mapping
+            voice_mapping = {
+                "meera": "pNInz6obpgDQGcFmaJgB",  # Example ID for Indian female voice
+                "male": "ErXwobaYiN019PkySvjV",   # Example ID for male voice
+                "female": "EXAVITQu4vr4xnSDxMaL"  # Example ID for female voice
+            }
+            
+            # Default to a standard voice if mapping not found
+            voice_id = voice_mapping.get(voice.lower(), "21m00Tcm4TlvDq8ikWAM")
+            
+            # ElevenLabs API endpoint and headers
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+            headers = {
+                "xi-api-key": Config.ELEVENLABS_API_KEY,
+                "Content-Type": "application/json"
+            }
+            
+            # Request payload
+            payload = {
+                "text": text,
+                "model_id": "eleven_monolingual_v1",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.5
+                }
+            }
+            
+            # Make API request
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        # Save audio file
+                        audio_data = await response.read()
+                        with open(output_path, "wb") as f:
+                            f.write(audio_data)
+                        
+                        # Get audio duration
+                        audio = AudioSegment.from_file(output_path)
+                        duration_seconds = len(audio) / 1000.0
+                        
+                        # Generate URL for API access
+                        audio_url = f"/audio/{os.path.basename(output_path)}"
+                        
+                        return {
+                            "audio_path": output_path,
+                            "audio_url": audio_url,
+                            "text": text,
+                            "voice": voice,
+                            "duration_seconds": duration_seconds
+                        }
+                    else:
+                        error_message = f"ElevenLabs API error: {response.status} - {await response.text()}"
+                        logger.error(error_message)
+                        return {"error": error_message}
+                        
+        except Exception as e:
+            logger.error(f"Error in ElevenLabs TTS: {str(e)}")
+            return {"error": str(e)}

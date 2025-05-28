@@ -31,11 +31,22 @@ class LanguageAgent(BaseAgent):
             True if initialization is successful, False otherwise.
         """
         try:
-            # Initialize the language model
-            # In a real implementation, you would use an actual LLM
-            # For this example, we'll use a simulated LLM
-            self.llm = await asyncio.to_thread(OpenAI, temperature=0.7)
-            logger.info("Initialized language model")
+            # Initialize the GPT-4.1 model
+            from langchain.chat_models import ChatOpenAI
+            
+            # Check if API key is available
+            if not Config.OPENAI_API_KEY:
+                logger.error("OpenAI API key not found. Cannot initialize GPT-4.1")
+                return False
+                
+            # Initialize with GPT-4.1 model
+            self.llm = await asyncio.to_thread(
+                ChatOpenAI,
+                model_name="gpt-4-1106-preview",  # Use GPT-4.1 model
+                temperature=0.7,
+                openai_api_key=Config.OPENAI_API_KEY
+            )
+            logger.info("Initialized GPT-4.1 language model")
             return True
         except Exception as e:
             logger.error(f"Error initializing language model: {str(e)}")

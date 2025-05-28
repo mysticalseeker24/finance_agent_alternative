@@ -40,10 +40,11 @@ Then edit the `.env` file with your actual API keys and configuration values.
    - Note your environment (e.g., `us-west1-gcp`)
 
 3. **Add to Environment**:
-   ```
-   PINCONE_API_KEY=your_pinecone_api_key
-   PINCONE_ENVIRONMENT=your_pinecone_environment
-   ```
+
+```bash
+PINCONE_API_KEY=your_pinecone_api_key
+PINCONE_ENVIRONMENT=your_pinecone_environment
+```
 
 #### Voice Processing
 

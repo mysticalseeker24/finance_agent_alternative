@@ -42,6 +42,7 @@ class QueryRequest(BaseModel):
     query: str
     voice_input: bool = False
     voice_output: bool = True
+    language: str = "auto"  # 'auto', 'en' for English, 'hi' for Hindi
 
 class QueryResponse(BaseModel):
     """Model for a financial query response."""
@@ -103,12 +104,13 @@ async def process_query(request: QueryRequest):
     Returns:
         The query response.
     """
-    logger.info(f"Received query request: {request.query}")
+    logger.info(f"Received query request: {request.query} (language: {request.language})")
     try:
         result = await orchestrator.process_query(
             query=request.query,
             voice_input=request.voice_input,
-            voice_output=request.voice_output
+            voice_output=request.voice_output,
+            language=request.language
         )
         return result
     
@@ -119,13 +121,15 @@ async def process_query(request: QueryRequest):
 @app.post("/voice-query")
 async def process_voice_query(
     audio: UploadFile = File(...),
-    voice_output: bool = Form(True)
+    voice_output: bool = Form(True),
+    language: str = Form("auto")  # 'auto', 'en' for English, 'hi' for Hindi
 ):
     """Process a voice query.
     
     Args:
         audio: The audio file containing the query.
         voice_output: Whether to generate voice output.
+        language: Language code for STT (default: 'auto' for automatic detection).
         
     Returns:
         The query response.
@@ -135,11 +139,13 @@ async def process_voice_query(
         # Save the uploaded audio file
         audio_content = await audio.read()
         
-        # Process the audio query
+        # Process the audio query with language parameter
+        logger.info(f"Processing voice query with language setting: {language}")
         result = await orchestrator.process_query(
             query=audio_content,  # Pass the audio content directly
             voice_input=True,
-            voice_output=voice_output
+            voice_output=voice_output,
+            language=language  # Pass the language parameter
         )
         return result
     

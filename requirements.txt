@@ -1,6 +1,6 @@
 # Data ingestion
 yfinance>=0.2.12
-scrappy>=2.8.0
+scrapy>=2.8.0
 firecrawl>=0.1.0
 pdfplumber>=0.9.0
 PyPDF2>=3.0.0

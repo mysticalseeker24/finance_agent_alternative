@@ -6,7 +6,7 @@ The Finance Agent is a multi-agent system that provides financial insights and a
 
 ## System Architecture Diagram
 
-```
+```ascii
 ┌───────────────────┐     ┌───────────────────┐     ┌───────────────────┐
 │                   │     │                   │     │                   │
 │  Streamlit UI     │◄────┤  FastAPI Backend  │◄────┤  Agent System     │

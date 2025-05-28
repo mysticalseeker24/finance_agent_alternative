@@ -121,17 +121,33 @@ def plot_stock_performance(stock_data):
 with st.sidebar:
     st.header("Settings & Status")
     
-    # API status indicator
-    api_healthy = get_api_health()
-    if api_healthy:
+    # API Status
+    api_health = get_api_health()
+    if api_health:
         st.success("✅ API Connected")
     else:
         st.error("❌ API Disconnected")
     
-    # Voice settings
-    st.subheader("Voice Interaction")
-    voice_input = st.toggle("Voice Input", value=False)
-    voice_output = st.toggle("Voice Output", value=True)
+    # Input/Output Settings
+    st.subheader("Input/Output Settings")
+    
+    # Voice Input Toggle
+    voice_input = st.toggle("Enable Voice Input", value=False)
+    if voice_input and not st.session_state.get("recording"):
+        st.session_state.recording = False
+    
+    # Output Preference
+    st.write("Response Format:")
+    output_preference = st.radio(
+        "How would you like to receive responses?",
+        options=["Text Only", "Voice (English)", "Both Text and Voice"],
+        index=0,
+        horizontal=True,
+        key="output_preference"
+    )
+    
+    # Store preference in session state
+    st.session_state.output_preference = output_preference
     
     # Market brief schedule
     st.subheader("Market Brief")
@@ -448,11 +464,18 @@ if st.button("Ask") or query:
         st.info("Processing your question...")
         
         try:
+            # Get output preference from session state
+            output_preference = st.session_state.get("output_preference", "Text Only")
+            
+            # Determine if voice output is needed based on preference
+            need_voice_output = output_preference in ["Voice (English)", "Both Text and Voice"]
+            
             # Create the request payload
             payload = {
                 "query": query,
                 "voice_input": voice_input,
-                "voice_output": voice_output
+                "voice_output": need_voice_output,
+                "language": "auto"  # For automatic language detection (Hindi/English)
             }
             
             # Send the request to the API
@@ -461,12 +484,18 @@ if st.button("Ask") or query:
             if response.status_code == 200:
                 result = response.json()
                 
-                # Display the response
+                # Display the response based on preference
                 st.subheader("Answer")
-                st.write(result["response"])
                 
-                # Display audio if available and voice output is enabled
-                if voice_output and result.get("audio_url"):
+                # Always show text for 'Text Only' or 'Both' options
+                if output_preference in ["Text Only", "Both Text and Voice"]:
+                    st.write(result["response"])
+                
+                # Show audio for 'Voice' or 'Both' options
+                if need_voice_output and result.get("audio_url"):
+                    # Add a message when only voice is requested
+                    if output_preference == "Voice (English)":
+                        st.info("Playing voice response")
                     st.audio(result["audio_url"], format="audio/mp3")
                 
                 # Display sources if available

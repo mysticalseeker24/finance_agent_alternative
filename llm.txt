@@ -1,0 +1,200 @@
+# Finance Agent Project Documentation
+
+## Project Overview
+
+The Finance Agent is a sophisticated multi-agent system designed to provide financial insights, market analysis, and portfolio management through natural language interactions. The system offers both text and voice-based interactions via a Streamlit application and supports scheduled market briefs delivered every morning at 8 AM.
+
+## Core Features
+
+1. **Daily Market Briefs**: Automated delivery of comprehensive market summaries at 8 AM covering market trends, portfolio details, and financial news.
+
+2. **Multilingual Voice Interactions**: Support for voice queries and responses in both English and Hindi languages using advanced speech-to-text and text-to-speech capabilities.
+
+3. **Multi-source Data Integration**: Integration with various financial data sources including:
+   - Market data APIs (YFinance)
+   - Web content via scraping (Scrapy, Firecrawl)
+   - Document processing (PDFs, reports)
+
+4. **Retrieval-Augmented Generation (RAG)**: Enhanced responses through vector-based retrieval from financial knowledge sources stored in Pinecone.
+
+5. **Portfolio Analysis**: Detailed analytics on portfolio performance, risk assessment, and investment recommendations.
+
+## System Architecture
+
+The system follows a microservices architecture with specialized agents orchestrated through a central coordinator:
+
+### Data Layer
+
+1. **API Agent**: Interacts with YFinance and other financial APIs to fetch real-time market data.
+
+2. **Scraping Agent**: Utilizes Scrapy and Firecrawl to extract information from financial websites and news sources.
+
+3. **Retriever Agent**: Manages the vector store (Pinecone) for efficient retrieval of relevant financial information.
+
+### Processing Layer
+
+4. **Analysis Agent**: Performs financial calculations, risk assessments, and portfolio analysis using Python financial libraries.
+
+5. **Language Agent**: Processes natural language using GPT-4.1 to generate coherent and contextually relevant responses.
+
+6. **Voice Agent**: Handles speech-to-text (Whisper) and text-to-speech (Sarvam AI/ElevenLabs) operations with support for both Hindi and English.
+
+### Presentation Layer
+
+7. **Orchestrator**: Coordinates the workflow between different agents via FastAPI microservices.
+
+8. **Streamlit Application**: Provides the user interface for interacting with the Finance Agent, supporting text/voice inputs and outputs.
+
+## Technical Implementation
+
+### Key Technologies
+
+- **Language Models**: GPT-4.1 (OpenAI)
+- **Voice Processing**: Whisper (STT), Sarvam AI/ElevenLabs (TTS)
+- **Vector Store**: Pinecone with SentenceTransformers
+- **Data Processing**: Pandas, NumPy, yfinance
+- **Web Scraping**: Scrapy, Firecrawl
+- **Backend**: FastAPI, async processing
+- **Frontend**: Streamlit
+- **Containerization**: Docker
+
+### Major Components
+
+#### 1. Data Ingestion Pipelines
+
+The system collects data from multiple sources:
+
+- **Market Data**: Real-time and historical financial data from YFinance API
+- **News and Analysis**: Web scraped content from financial news sites
+- **Documents**: Processed PDFs of financial reports and analysis
+
+All data is processed, normalized, and indexed in the vector store for retrieval.
+
+#### 2. Vector Store and RAG
+
+The Retrieval-Augmented Generation system enhances LLM responses with factual financial data:
+
+- **Embedding Generation**: Financial texts are converted to vector embeddings
+- **Semantic Search**: Query embeddings are matched with relevant stored information
+- **Context Augmentation**: Retrieved information enriches the language model prompts
+
+#### 3. Agent System
+
+Each specialized agent handles a specific aspect of the system:
+
+- **API Agent**: Fetches market data, processes financial information
+- **Scraping Agent**: Gathers news, analyst opinions, market sentiment
+- **Retriever Agent**: Performs semantic search across the knowledge base
+- **Analysis Agent**: Calculates financial metrics, analyzes portfolios
+- **Language Agent**: Generates natural language responses using GPT-4.1
+- **Voice Agent**: Processes speech inputs/outputs with language detection
+
+#### 4. Voice Processing
+
+The voice processing pipeline supports a fully voice-based interaction:
+
+- **Speech-to-Text**: Whisper model with automatic language detection for Hindi/English
+- **Text-to-Speech**: High-quality voice synthesis through Sarvam AI (primary) or ElevenLabs (fallback)
+- **Voice Output Preferences**: Users can choose text-only, voice-only, or combined responses
+
+#### 5. Streamlit Application
+
+The frontend interface provides:
+
+- **Query Interface**: Text input field and voice recording button
+- **Output Preferences**: Selection for text/voice output modes
+- **Market Brief Viewer**: Dashboard for displaying market summaries
+- **Portfolio Visualizations**: Interactive charts for portfolio analysis
+
+## Recent Enhancements
+
+### GPT-4.1 Integration
+
+Upgraded the Language Agent to utilize OpenAI's GPT-4.1 model ("gpt-4-1106-preview") for improved reasoning, contextual understanding, and more accurate financial analysis.
+
+### Bilingual STT Support
+
+Enhanced the Voice Agent to support both Hindi and English languages for speech recognition:
+
+- Automatic language detection capability
+- Explicit language specification option ("en" for English, "hi" for Hindi)
+- Improved transcription accuracy for financial terminology
+
+### User Output Preferences
+
+Added functionality for users to customize their interaction experience:
+
+- Text Only: For quiet environments or reading preference
+- Voice (English): For hands-free operation
+- Both: Combined visual and auditory information
+
+## Configuration Requirements
+
+### API Keys
+
+- **OPENAI_API_KEY**: Required for GPT-4.1 language model
+- **PINECONE_API_KEY**: For vector database operations
+- **SARVAM_AI_API_KEY**: Primary TTS service
+- **ELEVENLABS_API_KEY**: Alternative TTS service
+
+### Environment Settings
+
+- **REDIS_HOST/PORT**: For caching and temporary storage
+- **FASTAPI_HOST/PORT**: Backend service configuration
+- **STREAMLIT_PORT**: Frontend application port
+- **MARKET_BRIEF_HOUR/MINUTE**: Scheduling for daily briefings
+
+## Development Guidelines
+
+### Code Structure
+
+The project follows a modular architecture with clear separation of concerns:
+
+```
+finance_agent/
+├── agents/                 # Specialized agent implementations
+│   ├── api_agent.py        # Market data API interactions
+│   ├── analysis_agent.py   # Financial calculations
+│   ├── language_agent.py   # LLM integration (GPT-4.1)
+│   ├── retriever_agent.py  # Vector store operations
+│   ├── scraping_agent.py   # Web content extraction
+│   └── voice_agent.py      # STT/TTS processing
+├── data/                   # Data storage and processing
+│   ├── loaders/            # Document and data loaders
+│   ├── processors/         # Data transformation pipelines
+│   └── schemas/            # Data models and validation
+├── orchestrator/           # Agent coordination
+│   ├── main.py             # FastAPI application
+│   ├── workflows/          # Process workflows
+│   └── scheduler.py        # Task scheduling
+├── streamlit_app/          # Frontend interface
+│   ├── app.py              # Main Streamlit application
+│   ├── components/         # UI components
+│   └── pages/              # Application pages
+├── utils/                  # Shared utilities
+└── config.py               # Configuration management
+```
+
+### Best Practices
+
+- **Asynchronous Processing**: All agent operations are async for responsiveness
+- **Error Handling**: Comprehensive error management with fallback strategies
+- **Caching**: Efficient data caching to minimize API calls
+- **Testing**: Unit and integration tests for all components
+- **Documentation**: Comprehensive docstrings and API reference
+
+## Deployment
+
+The application is containerized using Docker for consistent deployment:
+
+- **Development**: Local development with environment variables
+- **Testing**: CI/CD pipeline with GitHub Actions
+- **Production**: Docker Compose for orchestration of all services
+
+## Future Enhancements
+
+1. **Advanced Portfolio Optimization**: More sophisticated investment strategies
+2. **Sentiment Analysis**: Enhanced market sentiment tracking
+3. **Custom Voice Models**: Finetuned voice models for financial terminology
+4. **Additional Languages**: Support for more languages beyond Hindi and English
+5. **Mobile Application**: Dedicated mobile interface for on-the-go access

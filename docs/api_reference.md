@@ -16,9 +16,11 @@ Current implementation does not require authentication. Future versions will imp
 
 #### Get Stock Information
 
-```
+
+```http
 GET /api/v1/market/stock/{ticker}
 ```
+
 
 Returns current information about a specific stock.
 
@@ -50,7 +52,7 @@ Returns current information about a specific stock.
 
 #### Get Market Summary
 
-```
+```http
 GET /api/v1/market/summary
 ```
 
