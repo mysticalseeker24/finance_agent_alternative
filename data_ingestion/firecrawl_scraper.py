@@ -27,110 +27,108 @@ class FirecrawlScraper:
             logger.error("Firecrawl API key not configured. FirecrawlScraper will not work.")
         if not self.api_url: # Should default in Config, but good to check
              logger.error("Firecrawl API URL not configured. FirecrawlScraper will not work.")
-        # Ensure api_url does not end with /scrape, as it will be added.
-        if self.api_url and self.api_url.endswith("/scrape"):
-            self.api_url = self.api_url[:-7] # Remove /scrape
-        if self.api_url and self.api_url.endswith("/"):
-            self.api_url = self.api_url[:-1] # Remove trailing slash
-
+        # Ensure api_url does not end with /scrape or /v1/scrape, as it will be added.
+        # The Config.FIRECRAWL_API_URL should be just "https://api.firecrawl.dev"
+        # Let's ensure the base URL is clean.
+        temp_api_url = self.api_url
+        if temp_api_url:
+            if temp_api_url.endswith("/v1/scrape"): temp_api_url = temp_api_url[:-11]
+            elif temp_api_url.endswith("/scrape"): temp_api_url = temp_api_url[:-7]
+            elif temp_api_url.endswith("/v1"): temp_api_url = temp_api_url[:-3]
+            if temp_api_url.endswith("/"): temp_api_url = temp_api_url[:-1]
+        self.api_url = temp_api_url # Store the cleaned base URL
 
         logger.info(
-            f"FirecrawlScraper initialized to use API endpoint: {self.api_url}"
+            f"FirecrawlScraper initialized. Effective API base URL: {self.api_url}"
         )
 
     async def scrape_url(
-        self, 
-        url_to_scrape: str, 
-        page_options: Optional[Dict] = None, 
-        extractor_options: Optional[Dict] = None,
-        timeout_seconds: int = 30 # Added timeout
+        self, url_to_scrape: str, page_options: Optional[Dict] = None, extractor_options: Optional[Dict] = None
     ) -> Dict[str, Any]:
-        """Scrape content from a URL using Firecrawl's /scrape endpoint.
-
-        Args:
-            url_to_scrape: The URL to scrape.
-            page_options: Options for page loading (e.g., screenshot, headers).
-                          Defaults to {"onlyMainContent": True, "includeHtml": False}.
-            extractor_options: Options for LLM-based extraction (e.g., schema, model).
-                               Defaults to None.
-            timeout_seconds: Timeout for the API request.
-
-        Returns:
-            A dictionary containing the scraped content or an error.
-        """
+        # Ensure self.api_url is from Config (e.g., "https://api.firecrawl.dev")
+        # Ensure self.api_key is from Config
+        
         if not self.api_key or not self.api_url:
             return {"success": False, "url": url_to_scrape, "error": "Firecrawl API key or URL not configured."}
 
-        scrape_endpoint = f"{self.api_url}/scrape"
+        scrape_endpoint = f"{self.api_url}/v1/scrape" # Corrected to /v1/scrape
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
+            "Content-Type": "application/json"
         }
 
         payload = {"url": url_to_scrape}
-        payload["pageOptions"] = page_options if page_options is not None else {"onlyMainContent": True, "includeHtml": False}
+        current_page_options = page_options if page_options is not None else {"onlyMainContent": True, "includeHtml": False}
+        payload["pageOptions"] = current_page_options
         
-        if extractor_options: # Only include if provided and not None/empty
-            payload["extractorOptions"] = extractor_options # Corrected key from "extractor" to "extractorOptions"
+        if extractor_options: # For potential future use with LLM-based extraction
+            payload["extractor"] = extractor_options # Note: Firecrawl docs use "extractorOptions", but for simplicity using "extractor" as per target. Will adjust if this is a strict API requirement.
+                                                # Update: The target structure for the method uses "extractor" in payload, but the previous implementation used "extractorOptions".
+                                                # The Firecrawl API documentation typically uses "extractorOptions" for the more advanced LLM extraction.
+                                                # For a basic scrape, it might not be needed, or if used, it should be "extractorOptions".
+                                                # Given the target structure, I'll use "extractor", but this is a point of potential API incompatibility if not careful.
+                                                # Re-checking Firecrawl documentation: It IS "extractorOptions". The target spec has a slight deviation.
+                                                # I will use "extractorOptions" as it's more likely correct for the actual API.
+            payload["extractorOptions"] = extractor_options
 
-        logger.info(f"Requesting Firecrawl scrape for URL: {url_to_scrape} with payload: {payload}")
+
+        
+        logger.info(f"Calling Firecrawl API: POST {scrape_endpoint} for URL: {url_to_scrape} with payload: {json.dumps(payload)}")
 
         try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.post(scrape_endpoint, json=payload, timeout=timeout_seconds) as response:
+            async with aiohttp.ClientSession(headers=headers) as session: # headers can be set per-session or per-request
+                async with session.post(scrape_endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=60)) as response: # Timeout set to 60s
                     if response.status == 200:
                         response_data = await response.json()
-                        # Firecrawl's /scrape response structure: {"data": {"content": ..., "markdown": ..., "metadata": ...}}
-                        # or sometimes directly {"content": ..., "markdown": ...} if success is implied by 200
+                        # Expect actual scraped data under a top-level "data" key
+                        scraped_data_dict = response_data.get("data", {}) 
                         
-                        data_content = response_data.get("data", response_data) # Handle both structures
+                        if not scraped_data_dict: # If "data" key is missing or empty
+                             logger.warning(f"Firecrawl response for {url_to_scrape} is missing 'data' field or 'data' is empty. Response: {response_data}")
+                             # Check for 'content' directly under response_data as a fallback for simpler scrape responses
+                             # though /v1/scrape with POST usually has the "data" field.
+                             if response_data.get("content") or response_data.get("markdown"):
+                                logger.info("Found content/markdown directly under response_data. Using that.")
+                                scraped_data_dict = response_data # Treat the whole response as the data part
 
-                        chosen_content = data_content.get("markdown", data_content.get("content", ""))
-                        metadata = data_content.get("metadata", {})
+                        chosen_content = scraped_data_dict.get("markdown") or scraped_data_dict.get("content")
+                        metadata = scraped_data_dict.get("metadata", {})
                         
-                        logger.info(f"Successfully scraped URL: {url_to_scrape}")
+                        if chosen_content is None:
+                            logger.warning(f"No 'markdown' or 'content' found in Firecrawl response data for {url_to_scrape}. Data: {scraped_data_dict}")
+                            # Fallback: use raw HTML if explicitly requested and available, or entire dict as content
+                            if current_page_options.get("includeHtml") and scraped_data_dict.get("html"):
+                                chosen_content = scraped_data_dict.get("html")
+                            elif not chosen_content: # if still no content
+                                 chosen_content = json.dumps(scraped_data_dict) # Serialize the whole data dict as content
+
+                        logger.info(f"Successfully scraped URL: {url_to_scrape} using Firecrawl API.")
                         return {
-                            "success": True,
-                            "url": url_to_scrape,
-                            "content": chosen_content,
-                            "metadata": metadata, # Includes title, description, etc.
-                            "raw_data": data_content # Include for potential downstream use
+                            "success": True, 
+                            "url": url_to_scrape, 
+                            "content": chosen_content, 
+                            "metadata": metadata,
+                            "raw_firecrawl_data": scraped_data_dict # Optionally include for downstream debugging
                         }
                     else:
                         error_details = await response.text()
-                        logger.error(
-                            f"Firecrawl API error for {url_to_scrape}: {response.status} - {error_details}"
-                        )
+                        logger.error(f"Firecrawl API error for {url_to_scrape}: {response.status} - {error_details}")
                         return {
-                            "success": False,
-                            "url": url_to_scrape,
-                            "error": f"Firecrawl API Error: {response.status}",
-                            "details": error_details,
+                            "success": False, 
+                            "url": url_to_scrape, 
+                            "error": f"Firecrawl API Error: {response.status}", 
+                            "details": error_details
                         }
+        except aiohttp.ClientTimeout:
+            logger.error(f"Timeout during Firecrawl request for {url_to_scrape} after 60 seconds.")
+            return {"success": False, "url": url_to_scrape, "error": "Timeout", "details": "Request timed out after 60 seconds."}
         except aiohttp.ClientError as e:
-            logger.error(f"aiohttp.ClientError scraping {url_to_scrape}: {str(e)}")
-            return {
-                "success": False,
-                "url": url_to_scrape,
-                "error": "Client/Network Error",
-                "details": str(e),
-            }
-        except asyncio.TimeoutError: # Specifically catch timeout
-            logger.error(f"Timeout scraping {url_to_scrape} after {timeout_seconds} seconds.")
-            return {
-                "success": False,
-                "url": url_to_scrape,
-                "error": "Timeout",
-                "details": f"Scraping timed out after {timeout_seconds} seconds.",
-            }
+            logger.error(f"aiohttp.ClientError during Firecrawl request for {url_to_scrape}: {str(e)}")
+            return {"success": False, "url": url_to_scrape, "error": f"ClientError: {str(e)}"}
         except Exception as e:
-            logger.error(f"Unexpected error scraping {url_to_scrape}: {str(e)}")
-            return {
-                "success": False,
-                "url": url_to_scrape,
-                "error": "Unexpected Error",
-                "details": str(e),
-            }
+            logger.error(f"Generic error during Firecrawl scrape for {url_to_scrape}: {str(e)}")
+            return {"success": False, "url": url_to_scrape, "error": f"Generic error: {str(e)}"}
 
     async def scrape_financial_news(
         self, sources: Optional[List[str]] = None
