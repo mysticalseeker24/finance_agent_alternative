@@ -1,14 +1,14 @@
 """Language Agent for generating financial narratives using Langgraph and LangChain."""
 
-from typing import Dict, List, Any, Optional, Union, Callable
+from typing import Dict, List, Any, Optional, Union, Callable, TypedDict # Added TypedDict
 import asyncio
 from datetime import datetime
 import json
 
 from loguru import logger
 from langchain.prompts import PromptTemplate
-from langchain.schema import HumanMessage, SystemMessage
-from langchain.llms import OpenAI
+# from langchain.schema import HumanMessage, SystemMessage # Not explicitly used in provided snippet
+# from langchain.llms import OpenAI # Replaced by ChatOpenAI in initialize_llm
 from langchain.chains import LLMChain
 from langgraph.graph import END, StateGraph
 
@@ -150,28 +150,37 @@ class LanguageAgent(BaseAgent):
 
             # Execute the graph
             # In a real implementation, you would actually run the graph
-            # For this example, we'll simulate the execution
-            result = await self._simulate_graph_execution(
-                market_brief_graph, initial_state
-            )
+            # Compile and run the graph
+            app = market_brief_graph.compile()
+            final_state = await app.ainvoke(initial_state)
 
-            # Format the result
+            if final_state.get("error"):
+                logger.error(f"Error in market brief generation graph: {final_state['error']}")
+                return {"error": final_state["error"]}
+
+            # Format the result using the assembled brief from the graph's final state
+            brief_text = final_state.get("final_brief_text", "Error: Brief not generated.")
+            
+            # Extract title and summary if possible (or generate simple ones)
+            # This part might need refinement based on how final_brief_text is structured
+            brief_lines = brief_text.split('\n')
+            title = brief_lines[0] if brief_lines else "Market Brief"
+            
+            # For summary, we could take the first paragraph or a specific section if tagged
+            summary_content = final_state.get("generated_sections", {}).get("summary", "Summary not available.")
+
+
             brief = {
-                "title": "Daily Market Brief",
+                "title": title,
                 "date": datetime.now().strftime("%Y-%m-%d"),
-                "summary": self._generate_mock_summary(market_data),
-                "market_overview": self._generate_mock_market_overview(market_data),
-                "portfolio_performance": self._generate_mock_portfolio_performance(
-                    portfolio_data
-                ),
-                "news_highlights": self._generate_mock_news_highlights(news_data),
-                "outlook": self._generate_mock_outlook(),
-                "full_text": self._generate_mock_full_text(
-                    market_data, portfolio_data, news_data
-                ),
+                "summary": summary_content,
+                "market_overview": final_state.get("generated_sections", {}).get("market_overview", ""),
+                "portfolio_performance": final_state.get("generated_sections", {}).get("portfolio_performance", ""),
+                "news_highlights": final_state.get("generated_sections", {}).get("news_highlights", ""),
+                "outlook": final_state.get("generated_sections", {}).get("outlook", ""),
+                "full_text": brief_text, # The assembled brief
             }
-
-            logger.info("Generated market brief")
+            logger.info("Market brief generated successfully via LangGraph.")
             return brief
 
         except Exception as e:
@@ -206,27 +215,28 @@ class LanguageAgent(BaseAgent):
 
             # Execute the graph
             # In a real implementation, you would actually run the graph
-            # For this example, we'll simulate the execution
-            result = await self._simulate_graph_execution(
-                query_response_graph, initial_state
-            )
+            # Compile and run the graph
+            app = query_response_graph.compile()
+            final_state = await app.ainvoke(initial_state)
 
-            # Generate a mock response based on the query
-            response_text = self._generate_mock_query_response(
-                query, context, portfolio_data
-            )
+            if final_state.get("error"):
+                logger.error(f"Error in query response generation graph: {final_state['error']}")
+                return {"error": final_state["error"]}
+
+            response_text = final_state.get("final_response", "Error: Response not generated.")
+            reasoning = final_state.get("reasoning_steps", [])
 
             # Format the result
             response = {
                 "query": query,
                 "response": response_text,
-                "sources": [
+                "sources": [ # Assuming context items have metadata with source info
                     item.get("metadata", {}) for item in context if "metadata" in item
                 ],
-                "confidence": 0.85,  # Placeholder confidence score
+                "confidence": 0.9,  # Placeholder, could be dynamic later
+                "reasoning_steps": reasoning,
             }
-
-            logger.info(f"Generated response for query: {query}")
+            logger.info(f"Generated response for query: '{query}' via LangGraph.")
             return response
 
         except Exception as e:
@@ -296,166 +306,199 @@ class LanguageAgent(BaseAgent):
         Returns:
             A StateGraph object.
         """
-        # This is a simplified implementation of a Langgraph workflow
-        # In a real implementation, you would define actual nodes and edges
+# --- State Schemas ---
+class QueryState(TypedDict):
+    query: str
+    context: List[Dict[str, Any]]
+    portfolio_data: Optional[Dict[str, Any]]
+    reasoning_steps: List[str]
+    intermediate_summary: Optional[str]
+    final_response: str
+    error: Optional[str]
 
-        # Define the state schema
-        class State(dict):
-            market_data: Dict
-            portfolio_data: Dict
-            news_data: List
-            sections: List
-            current_section: Optional[str]
-            final_brief: str
+class MarketBriefState(TypedDict):
+    market_data: Dict[str, Any]
+    portfolio_data: Dict[str, Any]
+    news_data: List[Dict[str, Any]]
+    generated_sections: Dict[str, str] # e.g., {"summary": "...", "market_overview": "..."}
+    final_brief_text: str
+    error: Optional[str]
 
-        # Create a new graph
-        workflow = StateGraph(State)
 
-        # Define node functions
-        async def analyze_market_data(state):
-            # Analyze market data and generate a section
-            return {
-                "sections": state["sections"] + ["market_overview"],
-                "current_section": "market_overview",
-            }
+# --- Helper for LLM Calls ---
+    async def _get_llm_response(self, prompt_template: PromptTemplate, inputs: Dict) -> str:
+        """Helper to get response from LLM using a prompt template and inputs."""
+        if not self.llm:
+            logger.error("LLM not initialized. Cannot get LLM response.")
+            return "Error: LLM not available."
+        try:
+            chain = LLMChain(llm=self.llm, prompt=prompt_template)
+            response = await chain.arun(**inputs)
+            return response
+        except Exception as e:
+            logger.error(f"Error during LLM call: {str(e)}")
+            return f"Error generating LLM response: {str(e)}"
 
-        async def analyze_portfolio_data(state):
-            # Analyze portfolio data and generate a section
-            return {
-                "sections": state["sections"] + ["portfolio_performance"],
-                "current_section": "portfolio_performance",
-            }
+# --- Market Brief Graph ---
+    async def _create_market_brief_graph(self) -> StateGraph:
+        workflow = StateGraph(MarketBriefState)
 
-        async def analyze_news_data(state):
-            # Analyze news data and generate a section
-            return {
-                "sections": state["sections"] + ["news_highlights"],
-                "current_section": "news_highlights",
-            }
+        async def generate_summary_node(state: MarketBriefState):
+            logger.info("Market Brief Graph: Generating summary...")
+            prompt = PromptTemplate.from_template(
+                "Generate a concise market summary based on the following market data and news. "
+                "Market Data: {market_data_json}\nNews Data: {news_data_json}\nSummary:"
+            )
+            summary = await self._get_llm_response(
+                prompt, {
+                    "market_data_json": json.dumps(state['market_data']),
+                    "news_data_json": json.dumps(state['news_data'])
+                }
+            )
+            current_sections = state.get("generated_sections", {})
+            return {"generated_sections": {**current_sections, "summary": summary}}
 
-        async def generate_outlook(state):
-            # Generate outlook section
-            return {
-                "sections": state["sections"] + ["outlook"],
-                "current_section": "outlook",
-            }
+        async def generate_market_overview_node(state: MarketBriefState):
+            logger.info("Market Brief Graph: Generating market overview...")
+            prompt = PromptTemplate.from_template(
+                "Provide a market overview based on this data: {market_data_json}\nOverview:"
+            )
+            overview = await self._get_llm_response(prompt, {"market_data_json": json.dumps(state['market_data'])})
+            current_sections = state.get("generated_sections", {})
+            return {"generated_sections": {**current_sections, "market_overview": overview}}
 
-        async def combine_sections(state):
-            # Combine all sections into a final brief
-            return {"final_brief": "Complete market brief", "current_section": None}
+        async def generate_portfolio_performance_node(state: MarketBriefState):
+            logger.info("Market Brief Graph: Generating portfolio performance...")
+            prompt = PromptTemplate.from_template(
+                "Summarize portfolio performance. Portfolio Data: {portfolio_data_json}\nPerformance Summary:"
+            )
+            performance = await self._get_llm_response(prompt, {"portfolio_data_json": json.dumps(state['portfolio_data'])})
+            current_sections = state.get("generated_sections", {})
+            return {"generated_sections": {**current_sections, "portfolio_performance": performance}}
+        
+        async def generate_key_news_node(state: MarketBriefState):
+            logger.info("Market Brief Graph: Generating key news...")
+            prompt = PromptTemplate.from_template(
+                "Highlight key financial news from the provided data: {news_data_json}\nKey News:"
+            )
+            key_news = await self._get_llm_response(prompt, {"news_data_json": json.dumps(state['news_data'])})
+            current_sections = state.get("generated_sections", {})
+            return {"generated_sections": {**current_sections, "news_highlights": key_news}}
 
-        # Add nodes to the graph
-        workflow.add_node("analyze_market", analyze_market_data)
-        workflow.add_node("analyze_portfolio", analyze_portfolio_data)
-        workflow.add_node("analyze_news", analyze_news_data)
-        workflow.add_node("generate_outlook", generate_outlook)
-        workflow.add_node("combine_sections", combine_sections)
+        async def generate_outlook_node(state: MarketBriefState):
+            logger.info("Market Brief Graph: Generating outlook...")
+            prompt = PromptTemplate.from_template(
+                "Provide a brief market outlook based on current data and news. "
+                "Context: {all_sections_json}\nOutlook:"
+            )
+            outlook = await self._get_llm_response(prompt, {"all_sections_json": json.dumps(state['generated_sections'])})
+            current_sections = state.get("generated_sections", {})
+            return {"generated_sections": {**current_sections, "outlook": outlook}}
 
-        # Define edges
-        workflow.add_edge("analyze_market", "analyze_portfolio")
-        workflow.add_edge("analyze_portfolio", "analyze_news")
-        workflow.add_edge("analyze_news", "generate_outlook")
-        workflow.add_edge("generate_outlook", "combine_sections")
-        workflow.add_edge("combine_sections", END)
+        async def assemble_brief_node(state: MarketBriefState):
+            logger.info("Market Brief Graph: Assembling final brief...")
+            sections = state.get("generated_sections", {})
+            brief_text = (
+                f"# Daily Market Brief - {datetime.now().strftime('%Y-%m-%d')}\n\n"
+                f"## Summary\n{sections.get('summary', 'Not available.')}\n\n"
+                f"## Market Overview\n{sections.get('market_overview', 'Not available.')}\n\n"
+                f"## Portfolio Performance\n{sections.get('portfolio_performance', 'Not available.')}\n\n"
+                f"## Key News Highlights\n{sections.get('news_highlights', 'Not available.')}\n\n"
+                f"## Market Outlook\n{sections.get('outlook', 'Not available.')}\n"
+            )
+            return {"final_brief_text": brief_text}
 
-        # Set the entry point
-        workflow.set_entry_point("analyze_market")
+        workflow.add_node("summary", generate_summary_node)
+        workflow.add_node("market_overview", generate_market_overview_node)
+        workflow.add_node("portfolio_performance", generate_portfolio_performance_node)
+        workflow.add_node("key_news", generate_key_news_node)
+        workflow.add_node("outlook", generate_outlook_node)
+        workflow.add_node("assemble_brief", assemble_brief_node)
 
+        workflow.add_edge("summary", "market_overview")
+        workflow.add_edge("market_overview", "portfolio_performance")
+        workflow.add_edge("portfolio_performance", "key_news")
+        workflow.add_edge("key_news", "outlook")
+        workflow.add_edge("outlook", "assemble_brief")
+        workflow.add_edge("assemble_brief", END)
+        workflow.set_entry_point("summary")
         return workflow
 
+# --- Query Response Graph ---
     async def _create_query_response_graph(self) -> StateGraph:
-        """Create a Langgraph workflow for query response generation.
+        workflow = StateGraph(QueryState)
 
-        Returns:
-            A StateGraph object.
-        """
-        # This is a simplified implementation of a Langgraph workflow
-        # In a real implementation, you would define actual nodes and edges
+        async def analyze_query_node(state: QueryState):
+            logger.info(f"Query Graph: Analyzing query: '{state['query']}'")
+            # Simple logging for now, can be expanded
+            return {"reasoning_steps": state.get("reasoning_steps", []) + ["Query analyzed"]}
 
-        # Define the state schema
-        class State(dict):
-            query: str
-            context: List
-            portfolio_data: Dict
-            reasoning: List
-            final_response: str
-
-        # Create a new graph
-        workflow = StateGraph(State)
-
-        # Define node functions
-        async def analyze_query(state):
-            # Analyze the query to determine what information is needed
-            return {"reasoning": state["reasoning"] + ["query_analysis"]}
-
-        async def retrieve_context(state):
-            # Retrieve additional context if needed
-            return {"reasoning": state["reasoning"] + ["context_retrieval"]}
-
-        async def process_context(state):
-            # Process and synthesize the context
-            return {"reasoning": state["reasoning"] + ["context_synthesis"]}
-
-        async def generate_response(state):
-            # Generate the final response
+        async def synthesize_context_node(state: QueryState):
+            logger.info("Query Graph: Synthesizing context...")
+            context_texts = "\n".join([doc.get("text", "") or doc.get("metadata", {}).get("text", "") for doc in state.get("context", [])])
+            if not context_texts:
+                logger.info("Query Graph: No context provided or context is empty.")
+                return {
+                    "intermediate_summary": "No specific context found to process.",
+                    "reasoning_steps": state.get("reasoning_steps", []) + ["Context synthesis attempted: No context found."]
+                }
+            
+            prompt = PromptTemplate.from_template(
+                "Given the user's query: '{query}'\n"
+                "And the following retrieved context:\n{context_texts}\n"
+                "Summarize the key information from the context that is most relevant to answering the query. "
+                "If the context seems irrelevant, explicitly state that."
+            )
+            summary = await self._get_llm_response(prompt, {"query": state["query"], "context_texts": context_texts})
             return {
-                "final_response": "Generated response",
-                "reasoning": state["reasoning"] + ["response_generation"],
+                "intermediate_summary": summary,
+                "reasoning_steps": state.get("reasoning_steps", []) + ["Context synthesized"]
             }
 
-        # Add nodes to the graph
-        workflow.add_node("analyze_query", analyze_query)
-        workflow.add_node("retrieve_context", retrieve_context)
-        workflow.add_node("process_context", process_context)
-        workflow.add_node("generate_response", generate_response)
+        async def generate_response_node(state: QueryState):
+            logger.info("Query Graph: Generating final response...")
+            portfolio_summary_str = json.dumps(state.get("portfolio_data"), indent=2) if state.get("portfolio_data") else "Not applicable."
+            prompt = PromptTemplate.from_template(
+                "You are a helpful financial assistant. Answer the user's query based on the provided information. "
+                "User Query: '{query}'\n"
+                "Relevant Information/Context Summary: {relevant_information}\n"
+                "User's Portfolio Summary (if relevant and available): {portfolio_summary}\n"
+                "Provide a concise and accurate answer."
+            )
+            final_answer = await self._get_llm_response(
+                prompt, {
+                    "query": state["query"],
+                    "relevant_information": state.get("intermediate_summary", "No summary available."),
+                    "portfolio_summary": portfolio_summary_str
+                }
+            )
+            return {
+                "final_response": final_answer,
+                "reasoning_steps": state.get("reasoning_steps", []) + ["Response generated"]
+            }
+        
+        # Optional error handling node example (can be expanded)
+        async def handle_error_node(state: QueryState):
+            logger.error(f"Query Graph: An error occurred: {state.get('error')}")
+            return {"final_response": f"Sorry, an error occurred: {state.get('error')}"}
 
-        # Define edges
-        workflow.add_edge("analyze_query", "retrieve_context")
-        workflow.add_edge("retrieve_context", "process_context")
-        workflow.add_edge("process_context", "generate_response")
+
+        workflow.add_node("analyze_query", analyze_query_node)
+        workflow.add_node("synthesize_context", synthesize_context_node)
+        workflow.add_node("generate_response", generate_response_node)
+        # workflow.add_node("error_handler", handle_error_node) # Example
+
+        workflow.add_edge("analyze_query", "synthesize_context")
+        workflow.add_edge("synthesize_context", "generate_response")
         workflow.add_edge("generate_response", END)
-
-        # Set the entry point
+        
+        # Basic conditional error routing (can be made more sophisticated)
+        # workflow.add_conditional_edges(
+        #     "synthesize_context",
+        #     lambda state: "error_handler" if state.get("error") else "generate_response",
+        # )
         workflow.set_entry_point("analyze_query")
-
         return workflow
-
-    async def _simulate_graph_execution(
-        self, graph: StateGraph, initial_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Simulate the execution of a Langgraph workflow.
-
-        Args:
-            graph: The StateGraph to execute.
-            initial_state: The initial state for the graph.
-
-        Returns:
-            The final state after execution.
-        """
-        # In a real implementation, you would actually run the graph
-        # For this example, we'll just return a modified version of the initial state
-
-        # Simulate processing through the graph
-        # This is just a placeholder that returns a modified state
-        if "final_brief" in initial_state:
-            initial_state["final_brief"] = "Simulated market brief output"
-            initial_state["sections"] = [
-                "market_overview",
-                "portfolio_performance",
-                "news_highlights",
-                "outlook",
-            ]
-
-        if "final_response" in initial_state:
-            initial_state["final_response"] = "Simulated query response output"
-            initial_state["reasoning"] = [
-                "query_analysis",
-                "context_retrieval",
-                "context_synthesis",
-                "response_generation",
-            ]
-
-        return initial_state
 
     def _generate_mock_summary(self, market_data: Dict[str, Any]) -> str:
         """Generate a mock market summary.
@@ -468,122 +511,14 @@ class LanguageAgent(BaseAgent):
         """
         return "Markets closed higher today, with technology stocks leading the rally. Major indices showed strong performance, while bond yields declined slightly. Asian markets were mixed, with Chinese stocks facing pressure amid regulatory concerns."
 
-    def _generate_mock_market_overview(self, market_data: Dict[str, Any]) -> str:
-        """Generate a mock market overview.
+    # Removing all _generate_mock_... methods as they are replaced by graph logic
+    # _generate_mock_summary, _generate_mock_market_overview, _generate_mock_portfolio_performance,
+    # _generate_mock_news_highlights, _generate_mock_outlook, _generate_mock_full_text,
+    # _generate_mock_query_response, _generate_mock_narrative
 
-        Args:
-            market_data: Market data for overview generation.
+    # _simulate_graph_execution is also removed as per instructions.
 
-        Returns:
-            Generated market overview text.
-        """
-        return "The S&P 500 gained 0.8%, closing at a new record high. The Dow Jones Industrial Average rose 0.5%, while the Nasdaq Composite surged 1.2%. Technology stocks were the top performers, with semiconductor companies showing particularly strong gains. Treasury yields fell as investors positioned for potential rate cuts later this year. Crude oil prices declined by 1.5% amid concerns about global demand."
-
-    def _generate_mock_portfolio_performance(
-        self, portfolio_data: Dict[str, Any]
-    ) -> str:
-        """Generate mock portfolio performance text.
-
-        Args:
-            portfolio_data: Portfolio data for performance generation.
-
-        Returns:
-            Generated portfolio performance text.
-        """
-        return "Your portfolio gained 0.9% today, outperforming the S&P 500 by 0.1%. Technology holdings were the main contributors, with semiconductor positions adding 25 basis points to performance. Financial services stocks lagged, creating a 10 basis point drag on the portfolio. Overall, the portfolio maintains a moderately conservative risk profile with a beta of 0.92 relative to the broader market."
-
-    def _generate_mock_news_highlights(self, news_data: List[Dict[str, Any]]) -> str:
-        """Generate mock news highlights text.
-
-        Args:
-            news_data: News data for highlights generation.
-
-        Returns:
-            Generated news highlights text.
-        """
-        return "Key headlines today include the Federal Reserve signaling potential rate cuts later this year, which boosted market sentiment. In corporate news, several major technology companies reported quarterly earnings that significantly exceeded analyst expectations, driving their shares higher. Additionally, regulatory developments in Asian markets created pressure on technology stocks in the region, highlighting ongoing geopolitical risks."
-
-    def _generate_mock_outlook(self) -> str:
-        """Generate a mock market outlook.
-
-        Returns:
-            Generated outlook text.
-        """
-        return "Looking ahead, market attention will focus on tomorrow's jobs report, which could significantly influence Federal Reserve policy expectations. Technical indicators suggest continued momentum for equity markets in the near term, though valuations remain elevated by historical standards. We maintain a cautiously optimistic outlook, with a preference for quality companies with strong balance sheets and sustainable competitive advantages."
-
-    def _generate_mock_full_text(
-        self,
-        market_data: Dict[str, Any],
-        portfolio_data: Dict[str, Any],
-        news_data: List[Dict[str, Any]],
-    ) -> str:
-        """Generate mock full market brief text.
-
-        Args:
-            market_data: Market data for brief generation.
-            portfolio_data: Portfolio data for brief generation.
-            news_data: News data for brief generation.
-
-        Returns:
-            Generated full market brief text.
-        """
-        summary = self._generate_mock_summary(market_data)
-        market_overview = self._generate_mock_market_overview(market_data)
-        portfolio_performance = self._generate_mock_portfolio_performance(
-            portfolio_data
-        )
-        news_highlights = self._generate_mock_news_highlights(news_data)
-        outlook = self._generate_mock_outlook()
-
-        return f"""# Daily Market Brief
-
-## Summary
-{summary}
-
-## Market Overview
-{market_overview}
-
-## Portfolio Performance
-{portfolio_performance}
-
-## News Highlights
-{news_highlights}
-
-## Outlook
-{outlook}
-"""
-
-    def _generate_mock_query_response(
-        self, query: str, context: List[Dict[str, Any]], portfolio_data: Dict[str, Any]
-    ) -> str:
-        """Generate a mock response to a financial query.
-
-        Args:
-            query: The user's query.
-            context: Relevant context from RAG.
-            portfolio_data: Portfolio data for reference.
-
-        Returns:
-            Generated response text.
-        """
-        # Handle different types of queries with mock responses
-        if (
-            "risk" in query.lower()
-            and "asia" in query.lower()
-            and "tech" in query.lower()
-        ):
-            return "Your current risk exposure to Asian technology stocks is approximately 12% of your total portfolio, with the largest positions in TSMC (3.5%) and Samsung Electronics (2.8%). This exposure has increased by 2% since last quarter due to strong performance in the semiconductor sector. Notable earnings surprises include TSMC beating estimates by 15%, driven by AI chip demand. However, the sector faces regulatory headwinds in China, which could create volatility in the coming months. Overall, your Asian tech exposure is slightly overweight relative to the benchmark."
-
-        elif "market" in query.lower() and "brief" in query.lower():
-            return "Today's market brief shows major indices closing higher, with the S&P 500 gaining 0.8% to reach a new record high. Technology stocks led the rally, particularly in the semiconductor space. Your portfolio outperformed slightly, gaining 0.9%. Key news includes the Federal Reserve signaling potential rate cuts and strong earnings from major tech companies. Tomorrow's jobs report will be a crucial data point for market direction."
-
-        elif "portfolio" in query.lower() and "performance" in query.lower():
-            return "Your portfolio has gained 8.2% year-to-date, outperforming the S&P 500 by 1.3%. The top contributors have been your technology holdings (+3.1% contribution) and healthcare stocks (+2.4% contribution). Energy has been the main detractor (-0.8% contribution). Your current asset allocation is 65% equities, 30% fixed income, and 5% alternatives, which is aligned with your target allocation. The portfolio's volatility remains below the market at 12.5% annualized."
-
-        else:
-            return "Based on your query and the available information, I can provide the following insights: The overall market environment remains favorable for risk assets, with accommodative monetary policy and strong corporate earnings. Your portfolio is well-positioned for this environment, with a balanced exposure across sectors and regions. Recent market trends suggest continued momentum, though valuations in some areas are becoming stretched. I recommend maintaining your current strategic allocation while potentially taking profits in some of the strongest performers."
-
-    def _generate_mock_narrative(
+    def _generate_mock_narrative( # This one remains as it's called by a separate operation
         self, data: Dict[str, Any], variables: Dict[str, Any]
     ) -> str:
         """Generate a mock narrative from data and variables.
@@ -634,6 +569,37 @@ class LanguageAgent(BaseAgent):
             },
         }
         return await self.run(request)
+
+    async def reformulate_query(self, original_query: str, search_summary: str = "Initial search results were not specific enough.") -> str:
+        logger.info(f"Reformulating query: {original_query}")
+        prompt_template = PromptTemplate.from_template(
+            "The original user query was: '{original_query}'\n"
+            "A previous search based on this query yielded results that were: '{search_summary}'\n"
+            "Please reformulate the original query to be clearer, more specific, or broader in a way that might yield better search results in a financial context. "
+            "Return only the reformulated query."
+        )
+        # Ensure self.llm is initialized
+        if not self.llm:
+            await self.initialize_llm()
+        if not self.llm: # If still not initialized
+            logger.error("LLM not initialized in LanguageAgent. Cannot reformulate query.")
+            return original_query # Fallback to original query
+
+        # Use the existing _get_llm_response helper
+        try:
+            reformulated_query = await self._get_llm_response(
+                prompt_template, 
+                {"original_query": original_query, "search_summary": search_summary}
+            )
+            if "Error: LLM not available." in reformulated_query or "Error generating LLM response:" in reformulated_query :
+                 logger.error(f"LLM response error during reformulation: {reformulated_query}")
+                 return original_query # Fallback
+            
+            logger.info(f"Reformulated query: {reformulated_query}")
+            return reformulated_query.strip()
+        except Exception as e:
+            logger.error(f"Error during query reformulation: {e}")
+            return original_query # Fallback to original query
 
     async def generate_query_response(
         self, query: str, context: List[Dict[str, Any]], portfolio_data: Dict[str, Any]

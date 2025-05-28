@@ -4,6 +4,8 @@ from typing import Dict, List, Any, Optional, Union
 import asyncio
 from datetime import datetime
 import json
+import hashlib # Added
+import redis # Added
 
 from fastapi import HTTPException
 from loguru import logger
@@ -39,6 +41,19 @@ class Orchestrator:
             "language_agent": "initialized",
             "voice_agent": "initialized",
         }
+        
+        # Initialize Redis cache for LLM responses
+        try:
+            self.cache = redis.Redis(
+                host=Config.REDIS_HOST, 
+                port=Config.REDIS_PORT, 
+                decode_responses=True # Store strings for JSON
+            )
+            self.cache.ping() # Check connection
+            logger.info(f"Orchestrator connected to Redis cache at {Config.REDIS_HOST}:{Config.REDIS_PORT}")
+        except redis.exceptions.ConnectionError as e:
+            logger.warning(f"Orchestrator failed to connect to Redis cache: {e}. LLM response caching will be disabled.")
+            self.cache = None
 
         logger.info("Orchestrator initialized with all agents")
 
@@ -106,6 +121,7 @@ class Orchestrator:
         start_time = datetime.now()
         query_text = query
         stt_result = None
+        cache_key = None # Initialize cache_key
 
         try:
             # Step 1: Handle speech input if provided
@@ -123,6 +139,21 @@ class Orchestrator:
                 stt_result = stt_response.get("data", {})
                 query_text = stt_result.get("text", "")
                 logger.info(f"Transcribed query: {query_text}")
+
+            # Check cache for existing LLM response
+            if self.cache:
+                query_hash = hashlib.sha256(query_text.encode()).hexdigest()
+                # Consider adding other relevant params like language to the hash if they significantly alter the response
+                # For now, just using query_text
+                cache_key = f"llm_response:{query_hash}" 
+                cached_response_str = await asyncio.to_thread(self.cache.get, cache_key)
+                if cached_response_str:
+                    logger.info(f"Returning cached LLM response for query: {query_text[:50]}...")
+                    cached_result = json.loads(cached_response_str)
+                    # Update dynamic fields like processing_time and timestamp
+                    cached_result["processing_time"] = (datetime.now() - start_time).total_seconds()
+                    cached_result["timestamp"] = datetime.now().isoformat() # Or use cached timestamp if preferred
+                    return cached_result
 
             # Step 2: Retrieve relevant context using RAG
             logger.info(f"Retrieving context for query: {query_text}")
@@ -177,6 +208,17 @@ class Orchestrator:
                     "confidence": stt_result.get("confidence"),
                     "language": stt_result.get("language"),
                 }
+            
+            # Cache the successful result
+            if self.cache and cache_key: # cache_key would have been set if cache is available
+                try:
+                    # Ensure result is JSON serializable (it should be as it's FastAPI response)
+                    response_to_cache_str = json.dumps(result)
+                    await asyncio.to_thread(self.cache.set, cache_key, response_to_cache_str, ex=60*60*12) # Cache for 12 hours
+                    logger.info(f"Cached LLM response for query: {query_text[:50]}...")
+                except Exception as cache_e:
+                    logger.warning(f"Failed to cache LLM response for query '{query_text[:50]}...': {cache_e}")
+
 
             logger.info(f"Query processed in {processing_time:.2f} seconds")
             return result
@@ -309,14 +351,64 @@ class Orchestrator:
             results = search_response.get("data", {}).get("data", [])
 
             # If no results or poor quality results, try query reformulation
-            if not results or max([r.get("score", 0) for r in results] or [0]) < 0.7:
-                logger.info(
-                    "Low quality retrieval results, trying to reformulate query"
-                )
-                # This would typically use the Language Agent to reformulate the query
-                # For this example, we'll just use the original query
-                # TODO: Implement query reformulation
+            # Check if results is a dictionary (error from agent) or list of dicts (actual results)
+            if isinstance(results, dict) and "error" in results:
+                logger.warning(f"Error in initial retrieval: {results['error']}")
+                results = [] # Treat as no results
 
+            # Ensure results is a list before trying to access scores
+            if not isinstance(results, list):
+                logger.error(f"Unexpected format for retrieval results: {results}. Defaulting to empty list.")
+                results = []
+
+            # Calculate max score safely
+            scores = [r.get("score", 0.0) for r in results if isinstance(r, dict)]
+            max_score = max(scores) if scores else 0.0
+
+            if not results or max_score < 0.7: # Confidence threshold
+                logger.info(
+                    f"Low quality initial retrieval results (max score: {max_score:.2f}). Attempting query reformulation."
+                )
+                # Create a brief summary of why reformulation is needed
+                reformulation_reason = "Initial search results were not specific or relevant enough."
+                if results: # If there were some results, try to use them for context
+                    top_results_summary_parts = []
+                    for res in results[:2]: # Take top 2 results
+                        if isinstance(res, dict) and "metadata" in res and isinstance(res["metadata"], dict):
+                            text_preview = res["metadata"].get("text", "")[:100] # Get first 100 chars of text
+                            if text_preview:
+                                top_results_summary_parts.append(text_preview)
+                    if top_results_summary_parts:
+                         reformulation_reason = f"Initial search results (e.g., '{'; '.join(top_results_summary_parts)}...') were not specific or relevant enough."
+                
+                original_query_text = query 
+                reformulated_query = await self.language_agent.reformulate_query(
+                    original_query_text,
+                    search_summary=reformulation_reason
+                )
+                
+                if reformulated_query.lower().strip() != original_query_text.lower().strip():
+                    logger.info(f"Retrying search with reformulated query: {reformulated_query}")
+                    search_response_reformulated = await self.retriever_agent.search_content(
+                        query=reformulated_query, top_k=5 # Or use original top_k if it was a parameter
+                    )
+                    
+                    new_results_data = search_response_reformulated.get("data", {})
+                    new_results = new_results_data.get("data", []) # Actual list of results
+                    
+                    if isinstance(new_results, dict) and "error" in new_results: # Check for error in new_results dict itself
+                        logger.warning(f"Error in reformulated retrieval: {new_results['error']}")
+                    elif not isinstance(new_results, list): # Check type of actual results list
+                         logger.error(f"Unexpected format for reformulated retrieval results: {new_results}. Using original results.")
+                    else:
+                        new_scores = [r.get("score", 0.0) for r in new_results if isinstance(r, dict)]
+                        new_max_score = max(new_scores) if new_scores else 0.0
+                        logger.info(f"Reformulated search results max score: {new_max_score:.2f}")
+                        # Simple strategy: use reformulated results if they exist, otherwise stick with original (even if poor)
+                        if new_results: # If reformulated search returned any results
+                             results = new_results 
+                else:
+                    logger.info("Query reformulation did not result in a new query. Using original results.")
             return results
 
         except Exception as e:
