@@ -19,7 +19,43 @@ from config import Config
 
 
 class VoiceAgent(BaseAgent):
-    """Agent for handling speech-to-text and text-to-speech operations."""
+    """Agent for handling speech-to-text and text-to-speech operations.
+
+    Guidance for using a Fine-Tuned Whisper Model:
+    1.  **Purpose of `WHISPER_FINETUNED_MODEL_PATH`:**
+        This configuration allows you to specify a path to a Whisper model that you have
+        fine-tuned for a specific domain, accent, or language nuance. Using a fine-tuned
+        model can significantly improve transcription accuracy for specialized audio.
+
+    2.  **Fine-Tuning Process Overview (Conceptual):**
+        *   **Data Collection:** Gather a dataset of audio recordings and their accurate transcriptions
+            that represent the target domain (e.g., financial earnings calls, specific accents).
+            The more high-quality, domain-specific data you have, the better the fine-tuning.
+        *   **Tools:** Typically, fine-tuning is done using libraries like Hugging Face Transformers.
+            You would start with a pre-trained Whisper model (e.g., 'base', 'small', 'medium')
+            and train it further on your custom dataset.
+        *   **Training:** This involves setting up a training pipeline, defining training arguments
+            (learning rate, epochs, batch size), and running the training process, often on a GPU.
+        *   **Saving the Model:** After training, save the fine-tuned model artifacts (weights,
+            configuration files, tokenizer files, preprocessor files). This saved directory or
+            Hugging Face Hub model name is what you would point `WHISPER_FINETUNED_MODEL_PATH` to.
+
+    3.  **Model Compatibility and Loading:**
+        *   **`openai-whisper` Compatibility:** The `whisper.load_model()` function used in this
+            agent is from the `openai-whisper` library. If your fine-tuned model is saved in a
+            format directly compatible with this (e.g., if you fine-tuned one of their released
+            checkpoints using compatible methods), it might load directly.
+        *   **Hugging Face Transformers Compatibility:** If your fine-tuned model is purely a
+            Hugging Face Transformers checkpoint (e.g., saved using `model.save_pretrained()`
+            from the `transformers` library), `whisper.load_model()` might not work directly.
+            In such cases, you would need to modify the `_speech_to_text` method in this agent
+            to use Hugging Face's `pipeline("automatic-speech-recognition", model="your-hf-model-path")`
+            or load the model with `WhisperForConditionalGeneration.from_pretrained()` and use its
+            `.generate()` method along with `WhisperProcessor` for audio processing.
+        *   **Current Implementation:** This agent currently attempts to load the specified path/name
+            using `whisper.load_model()`. If this fails, it falls back to the default model.
+            No automatic conversion or alternative loading mechanisms are implemented in this step.
+    """
 
     def __init__(self):
         """Initialize the Voice agent."""
@@ -36,18 +72,72 @@ class VoiceAgent(BaseAgent):
             True if initialization is successful, False otherwise.
         """
         try:
-            # Load the Whisper model for Hindi and English support
-            import whisper
+            # This import is here for clarity, it's usually at the top of the file.
+            import whisper 
+            # import os # Ensure os is imported at the top of the file
 
-            # Use the medium model for better multilingual support
-            # Small and base models have limited support for non-English languages
-            self.stt_model = await asyncio.to_thread(whisper.load_model, "medium")
-            logger.info(
-                "Initialized Whisper speech-to-text model with Hindi and English support"
-            )
+            tuned_model_path = Config.WHISPER_FINETUNED_MODEL_PATH
+            model_to_load = None
+            loaded_model_type = "" # For logging
+            model_identifier_for_log = "N/A"
+
+
+            if tuned_model_path:
+                # Basic check for local path existence. HF Hub names won't pass this,
+                # but whisper.load_model() might handle HF Hub names directly.
+                if os.path.exists(tuned_model_path):
+                    logger.info(f"Attempting to load fine-tuned Whisper model from local path: {tuned_model_path}")
+                    model_to_load = tuned_model_path
+                    loaded_model_type = "Fine-tuned (local)"
+                    model_identifier_for_log = tuned_model_path
+                else:
+                    # Assuming it could be an HF Hub model name if not a local path
+                    logger.info(f"Attempting to load fine-tuned Whisper model from Hugging Face Hub or alias: {tuned_model_path}")
+                    model_to_load = tuned_model_path
+                    loaded_model_type = "Fine-tuned (HF Hub/Alias)"
+                    model_identifier_for_log = tuned_model_path
+            
+            if model_to_load:
+                try:
+                    # The openai-whisper library's load_model can take a name (like 'medium')
+                    # or a path to the directory where model weights and other files are stored.
+                    # If fine-tuning was done with Hugging Face Transformers, the saved checkpoint
+                    # might need conversion or a different loading mechanism if not directly compatible.
+                    # For this conceptual step, we proceed assuming compatibility or that the user
+                    # handles the format.
+                    self.stt_model = await asyncio.to_thread(whisper.load_model, model_to_load)
+                    logger.info(f"Successfully loaded {loaded_model_type} Whisper model: {model_identifier_for_log}")
+                except Exception as ft_load_error:
+                    logger.warning(
+                        f"Failed to load fine-tuned Whisper model from '{model_to_load}': {ft_load_error}. "
+                        "Falling back to default model."
+                    )
+                    model_to_load = None # Force fallback
+                    model_identifier_for_log = "N/A" # Reset identifier
+            
+            if not model_to_load: # If no tuned path or if loading tuned path failed
+                default_model_name = "medium"
+                logger.info(f"Loading default Whisper model: {default_model_name}")
+                self.stt_model = await asyncio.to_thread(whisper.load_model, default_model_name)
+                loaded_model_type = f"Default"
+                model_identifier_for_log = default_model_name
+
+
+            # Try to get the actual model name/size if available from the loaded object for logging
+            # This is a best-effort logging as custom paths won't have a 'name' attribute like standard models.
+            if hasattr(self.stt_model, 'name') and self.stt_model.name: 
+                # This usually works for standard models like "medium", "base", etc.
+                log_model_name = self.stt_model.name
+            else:
+                # For custom paths or potentially HF models loaded via whisper.load_model (if compatible),
+                # model_identifier_for_log set during loading attempt is more descriptive.
+                log_model_name = model_identifier_for_log
+
+            logger.info(f"Whisper speech-to-text model ({log_model_name} - type: {loaded_model_type}) initialized successfully.")
             return True
         except Exception as e:
             logger.error(f"Error initializing speech-to-text model: {str(e)}")
+            self.stt_model = None # Ensure stt_model is None if any error occurs
             return False
 
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:

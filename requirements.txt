@@ -2,9 +2,11 @@
 yfinance>=0.2.12
 scrapy>=2.8.0
 # firecrawl is implemented as a custom module in the codebase
+mcp_client # Added for Firecrawl MCP integration
 pdfplumber>=0.9.0
 PyPDF2>=3.0.0
 requests>=2.28.2
+aiohttp>=3.8.0 # Added for generic async API calls in APIAgent
 
 # Vector store and RAG
 pinecone-client>=2.2.1
@@ -36,6 +38,7 @@ streamlit>=1.22.0
 
 # Cache and performance
 redis>=4.5.5
+tenacity>=8.2.0 # Added for yfinance_client retries
 
 # Utils
 python-dotenv>=1.0.0

@@ -210,40 +210,171 @@ with tabs[0]:
 
         # Voice input handling
         if voice_input:
-            st.info("🎤 Click the microphone button and speak your question")
-            col1, col2 = st.columns([1, 5])
+            # st.info("🎤 Click the microphone button and speak your question")
+            # col1, col2 = st.columns([1, 5])
 
-            with col1:
-                if not st.session_state.recording:
-                    if st.button("🎤 Record"):
-                        st.session_state.recording = True
-                else:
-                    if st.button("⏹️ Stop"):
-                        st.session_state.recording = False
-                        # Here we would process the audio recording
-                        # For now, we'll simulate this with a text input
-                        st.info(
-                            "Audio processed! Voice transcription would happen here in a real implementation."
-                        )
+            # with col1:
+            #     if not st.session_state.recording:
+            #         if st.button("🎤 Record"):
+            #             st.session_state.recording = True
+            #     else:
+            #         if st.button("⏹️ Stop"):
+            #             st.session_state.recording = False
+            #             # Here we would process the audio recording
+            #             # For now, we'll simulate this with a text input
+            #             st.info(
+            #                 "Audio processed! Voice transcription would happen here in a real implementation."
+            #             )
+            st.markdown("### Functional Voice Input (Implementation Required)")
+            st.markdown(
+                """
+                **Developer Note for Implementing Real Voice Input:**
+                To enable functional voice input, you'll need to use a Streamlit custom component 
+                or embed JavaScript that uses the browser's `MediaRecorder` API. 
+                This component should:
+                1. Request microphone permission.
+                2. Record audio when a 'Record' button is pressed.
+                3. Stop recording when 'Stop' is pressed.
+                4. Convert the recorded audio (e.g., to WAV or WebM format). The backend's Whisper
+                   model can handle various formats, but WAV is generally safe.
+                5. Send the audio data via an HTTP POST request to the `/voice-query` 
+                   FastAPI endpoint (e.g., using JavaScript `fetch`).
 
-            with col2:
-                # Fallback text input
-                query = st.text_input(
-                    "Question (type if voice not working)",
-                    key="voice_query",
-                    placeholder="What's our risk exposure in Asia tech stocks today?",
-                )
+                Here's a conceptual JavaScript snippet:
+                ```javascript
+                // Conceptual JavaScript for Client-Side Audio Recording and Sending to Backend
+
+                // Variables to store recorder instance and audio chunks
+                let mediaRecorder;
+                let audioChunks = [];
+                let audioStream; // To keep track of the stream for stopping tracks
+
+                // --- Recording Functions ---
+
+                /**
+                 * Requests microphone access and starts recording.
+                 */
+                async function startRecording() {
+                    try {
+                        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        mediaRecorder = new MediaRecorder(audioStream);
+
+                        mediaRecorder.ondataavailable = event => {
+                            if (event.data.size > 0) {
+                                audioChunks.push(event.data);
+                            }
+                        };
+
+                        mediaRecorder.onstop = async () => {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' }); 
+                            await sendAudioToBackend(audioBlob);
+                            audioChunks = []; // Clear chunks for the next recording
+                        };
+
+                        mediaRecorder.start();
+                        console.log("Recording started...");
+                        // Add UI updates here (e.g., disable record, enable stop)
+                    } catch (error) {
+                        console.error("Error accessing microphone or starting recording:", error);
+                        alert("Error accessing microphone: " + error.message);
+                    }
+                }
+
+                /**
+                 * Stops the current recording.
+                 */
+                function stopRecording() {
+                    if (mediaRecorder && mediaRecorder.state === "recording") {
+                        mediaRecorder.stop();
+                        console.log("Recording stopped.");
+                        if (audioStream) {
+                            audioStream.getTracks().forEach(track => track.stop());
+                        }
+                        // Add UI updates here (e.g., enable record, disable stop)
+                    } else {
+                        console.log("Recorder not active or already stopped.");
+                    }
+                }
+
+                // --- Backend Communication ---
+
+                /**
+                 * Sends the audio Blob to the backend using Fetch API.
+                 * @param {Blob} audioBlob The audio data to send.
+                 */
+                async function sendAudioToBackend(audioBlob) {
+                    const formData = new FormData();
+                    formData.append("file", audioBlob, "recorded_audio.wav"); 
+
+                    console.log("Sending audio to backend...");
+                    try {
+                        const response = await fetch("/voice-query", { // Ensure this matches your FastAPI endpoint
+                            method: "POST",
+                            body: formData,
+                        });
+
+                        if (response.ok) {
+                            const result = await response.json();
+                            console.log("Backend response:", result);
+                            // Update your Streamlit app with the response.
+                            // This typically requires sending the result back to Python,
+                            // e.g., using streamlit-javascript or by setting a hidden input
+                            // and triggering a Streamlit rerun.
+                            // For example, display transcription:
+                            // alert("Transcription: " + result.response); 
+                            // Or if you have a way to pass data back to Streamlit state:
+                            // Streamlit.setComponentValue({ "query_text": result.response, "audio_url": result.audio_url, "sources": result.sources });
+                        } else {
+                            const errorResult = await response.json();
+                            console.error("Error sending audio:", response.status, response.statusText, errorResult);
+                            alert(`Error sending audio: ${response.status} ${response.statusText}. ${errorResult.detail || ''}`);
+                        }
+                    } catch (error) {
+                        console.error("Network error or exception sending audio:", error);
+                        alert("Network error sending audio: " + error.message);
+                    }
+                }
+                ```
+                **Integration Options:**
+                *   **Custom Component:** Build a dedicated Streamlit custom component that encapsulates this JavaScript logic and provides Python callbacks. This is the most robust method.
+                *   **`st.components.v1.html`:** Embed the JavaScript using an iframe. Communication back to Streamlit from the iframe can be complex (e.g., using `window.parent.postMessage` and listening on the Streamlit side, or by having the JS trigger a hidden Streamlit widget).
+                *   **`streamlit-webrtc`:** This component is designed for real-time video/audio streaming but might be adaptable for audio recording and sending, though it might be more complex than needed for simple record-and-send.
+                
+                The backend endpoint `/voice-query` is ready to receive the audio file/blob named "file".
+                The response from `/voice-query` will be a JSON object similar to the text query response,
+                including the transcribed text in `response.query` or `response.response`, and potentially an `audio_url` for TTS output.
+                You will need to handle the response from `sendAudioToBackend` to update the Streamlit UI with the transcribed query and results.
+                """,
+                unsafe_allow_html=True
+            )
+            # Placeholder for where actual record/stop buttons would go if using a custom component
+            st.info("🎤 Voice input UI elements (Record/Stop buttons) would be part of the custom component or HTML integration.")
+
+            # Fallback text input
+            query = st.text_input(
+                "Question (type if voice not working, or after voice input)",
+                key="voice_query", # Keep key distinct or manage state carefully
+                placeholder="e.g., What are the risks for Asian tech stocks today?",
+                value=st.session_state.get("query_text", ""), # Allow JS to update this
+            )
+            st.session_state.query_text = query # Update session state from this input
         else:
             # Regular text input
             query = st.text_input(
                 "Question",
                 key="text_query",
-                placeholder="What's our risk exposure in Asia tech stocks today?",
+                placeholder="e.g., What are the risks for Asian tech stocks today?",
+                value=st.session_state.get("query_text", ""),
             )
+            st.session_state.query_text = query
+
 
         # Process query when ask button is clicked
-        if st.button("Ask", type="primary") or query:
-            if query:
+        # Ensure query from either voice (if implemented and updates query_text) or text input is used
+        current_query_for_processing = st.session_state.get("query_text", "")
+
+        if st.button("Ask", type="primary"): # Removed 'or query' to avoid auto-submit on page load with pre-filled text
+            if current_query_for_processing:
                 with st.spinner("Processing your question..."):
                     try:
                         # Determine voice output based on user preference

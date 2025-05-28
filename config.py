@@ -56,8 +56,12 @@ class Config:
     STREAMLIT_PORT = int(os.getenv("STREAMLIT_PORT", 8501))
 
     # Model Settings
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "roberta-large-nli-stsb-mean-tokens")
+    # Optional: Specify a secondary embedding model name for experimentation (e.g., "all-distilroberta-v1")
+    SECONDARY_EMBEDDING_MODEL = os.getenv("SECONDARY_EMBEDDING_MODEL", None)
     VOICE_MODEL = os.getenv("VOICE_MODEL", "meera")
+    # Optional: Path to a fine-tuned Whisper model directory or Hugging Face Hub model name.
+    WHISPER_FINETUNED_MODEL_PATH = os.getenv("WHISPER_FINETUNED_MODEL_PATH", None)
 
     # External Service URLs
     FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev/v1")
