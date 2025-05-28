@@ -12,10 +12,10 @@ from config import Config
 
 class FirecrawlScraper:
     """Scraper using Firecrawl MCP Server for dynamic web content."""
-    
+
     def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None):
         """Initialize the Firecrawl scraper using MCP.
-        
+
         Args:
             api_url: The Firecrawl API URL (defaults to Config.FIRECRAWL_API_URL).
             api_key: The Firecrawl API key (defaults to Config.FIRECRAWL_API_KEY).
@@ -23,36 +23,37 @@ class FirecrawlScraper:
         self.api_url = api_url or Config.FIRECRAWL_API_URL
         self.api_key = api_key or Config.FIRECRAWL_API_KEY
         self.mcp_server_name = Config.FIRECRAWL_MCP_SERVER
-        logger.info(f"Firecrawl MCP scraper initialized with server: {self.mcp_server_name}")
-    
-    def scrape_url(self, url: str, selectors: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        logger.info(
+            f"Firecrawl MCP scraper initialized with server: {self.mcp_server_name}"
+        )
+
+    def scrape_url(
+        self, url: str, selectors: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
         """Scrape content from a URL using Firecrawl MCP integration.
-        
+
         Args:
             url: The URL to scrape.
             selectors: CSS selectors to extract specific content.
                        Example: {"title": "h1", "content": ".article-body"}
-            
+
         Returns:
             A dictionary containing the scraped content.
         """
         try:
             logger.info(f"Scraping URL with Firecrawl MCP: {url}")
-            
+
             # Prepare the puppeteer script for MCP
-            script = {
-                "navigate": {
-                    "url": url,
-                    "waitUntil": "networkidle0"
-                }
-            }
-            
+            script = {"navigate": {"url": url, "waitUntil": "networkidle0"}}
+
             # Add selector extraction if provided
             extraction_scripts = {}
             if selectors:
                 for key, selector in selectors.items():
-                    extraction_scripts[key] = f"document.querySelector('{selector}')?.textContent.trim()"
-            
+                    extraction_scripts[key] = (
+                        f"document.querySelector('{selector}')?.textContent.trim()"
+                    )
+
             # If selectors provided, add them to the script
             if extraction_scripts:
                 script["extract"] = extraction_scripts
@@ -60,22 +61,24 @@ class FirecrawlScraper:
                 # Default extraction if no selectors provided
                 script["extract"] = {
                     "title": "document.title",
-                    "content": "document.body.textContent.trim()"
+                    "content": "document.body.textContent.trim()",
                 }
-            
+
             # Call MCP Puppeteer to execute the script
             mcp_result = self._call_mcp_puppeteer(url, script)
-            
+
             # Process the result
             if mcp_result and "error" not in mcp_result:
                 result = {
                     "url": url,
                     "timestamp": datetime.now().isoformat(),
-                    **mcp_result  # Include all extracted data
+                    **mcp_result,  # Include all extracted data
                 }
             else:
                 # Fallback to simulated responses if MCP fails
-                logger.warning(f"MCP scraping failed for {url}, falling back to simulation")
+                logger.warning(
+                    f"MCP scraping failed for {url}, falling back to simulation"
+                )
                 if "finance.yahoo.com" in url:
                     result = self._simulate_yahoo_finance(url, selectors)
                 elif "cnbc.com" in url:
@@ -88,12 +91,12 @@ class FirecrawlScraper:
                         "url": url,
                         "title": f"Content from {url}",
                         "content": "Sample content",
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now().isoformat(),
                     }
-            
+
             logger.info(f"Scraped content from {url} using Firecrawl")
             return result
-        
+
         except Exception as e:
             logger.error(f"Error scraping {url} with Firecrawl: {str(e)}")
             return {
@@ -101,14 +104,16 @@ class FirecrawlScraper:
                 "error": str(e),
                 "timestamp": datetime.now().isoformat(),
             }
-    
-    def scrape_financial_news(self, sources: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+
+    def scrape_financial_news(
+        self, sources: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """Scrape financial news from multiple sources.
-        
+
         Args:
             sources: List of news source identifiers (e.g., ["yahoo_finance", "cnbc"]).
                     If None, all available sources are used.
-            
+
         Returns:
             A list of dictionaries containing news articles.
         """
@@ -117,10 +122,10 @@ class FirecrawlScraper:
             "cnbc": "https://www.cnbc.com/finance/",
             "bloomberg": "https://www.bloomberg.com/markets",
         }
-        
+
         sources_to_scrape = sources or list(available_sources.keys())
         results = []
-        
+
         for source in sources_to_scrape:
             if source in available_sources:
                 url = available_sources[source]
@@ -130,33 +135,33 @@ class FirecrawlScraper:
                     "link": "a",
                     "summary": "p",
                 }
-                
+
                 try:
                     result = self.scrape_url(url, selectors)
                     if "error" not in result:
                         results.extend(result.get("articles", []))
                     else:
                         logger.warning(f"Error scraping {source}: {result['error']}")
-                
+
                 except Exception as e:
                     logger.error(f"Error processing {source}: {str(e)}")
             else:
                 logger.warning(f"Unknown source: {source}")
-        
+
         return results
-    
+
     def scrape_earnings_report(self, ticker: str) -> Dict[str, Any]:
         """Scrape the latest earnings report for a company.
-        
+
         Args:
             ticker: The stock ticker symbol.
-            
+
         Returns:
             A dictionary containing earnings data.
         """
         # Construct URL for earnings information
         url = f"https://finance.yahoo.com/quote/{ticker}/earnings"
-        
+
         # Define selectors for earnings data
         selectors = {
             "earnings_table": "table",
@@ -166,11 +171,11 @@ class FirecrawlScraper:
             "revenue": ".revenue-actual",
             "revenue_estimate": ".revenue-estimate",
         }
-        
+
         try:
             # Scrape the earnings page
             result = self.scrape_url(url, selectors)
-            
+
             if "error" not in result:
                 # Process the result
                 return {
@@ -180,13 +185,15 @@ class FirecrawlScraper:
                     "timestamp": datetime.now().isoformat(),
                 }
             else:
-                logger.warning(f"Error scraping earnings for {ticker}: {result['error']}")
+                logger.warning(
+                    f"Error scraping earnings for {ticker}: {result['error']}"
+                )
                 return {
                     "ticker": ticker,
                     "error": result["error"],
                     "timestamp": datetime.now().isoformat(),
                 }
-        
+
         except Exception as e:
             logger.error(f"Error processing earnings for {ticker}: {str(e)}")
             return {
@@ -194,14 +201,16 @@ class FirecrawlScraper:
                 "error": str(e),
                 "timestamp": datetime.now().isoformat(),
             }
-    
-    def _simulate_yahoo_finance(self, url: str, selectors: Optional[Dict[str, str]]) -> Dict[str, Any]:
+
+    def _simulate_yahoo_finance(
+        self, url: str, selectors: Optional[Dict[str, str]]
+    ) -> Dict[str, Any]:
         """Simulate a response from Yahoo Finance.
-        
+
         Args:
             url: The URL being scraped.
             selectors: The selectors used for scraping.
-            
+
         Returns:
             A simulated response dictionary.
         """
@@ -232,14 +241,16 @@ class FirecrawlScraper:
             ],
             "timestamp": datetime.now().isoformat(),
         }
-    
-    def _simulate_cnbc(self, url: str, selectors: Optional[Dict[str, str]]) -> Dict[str, Any]:
+
+    def _simulate_cnbc(
+        self, url: str, selectors: Optional[Dict[str, str]]
+    ) -> Dict[str, Any]:
         """Simulate a response from CNBC.
-        
+
         Args:
             url: The URL being scraped.
             selectors: The selectors used for scraping.
-            
+
         Returns:
             A simulated response dictionary.
         """
@@ -270,14 +281,16 @@ class FirecrawlScraper:
             ],
             "timestamp": datetime.now().isoformat(),
         }
-    
-    def _simulate_bloomberg(self, url: str, selectors: Optional[Dict[str, str]]) -> Dict[str, Any]:
+
+    def _simulate_bloomberg(
+        self, url: str, selectors: Optional[Dict[str, str]]
+    ) -> Dict[str, Any]:
         """Simulate a response from Bloomberg.
-        
+
         Args:
             url: The URL being scraped.
             selectors: The selectors used for scraping.
-            
+
         Returns:
             A simulated response dictionary.
         """
@@ -308,23 +321,25 @@ class FirecrawlScraper:
             ],
             "timestamp": datetime.now().isoformat(),
         }
-    
+
     def _call_mcp_puppeteer(self, url: str, script: Dict[str, Any]) -> Dict[str, Any]:
         """Call the MCP Puppeteer server to execute web scraping scripts.
-        
+
         Args:
             url: The URL to scrape
             script: The script containing navigation and extraction instructions
-            
+
         Returns:
             Dictionary containing the extracted data or error information
         """
         try:
             logger.info(f"Calling MCP Puppeteer for URL: {url}")
-            
+
             # First, navigate to the URL
-            navigate_result = self._mcp_puppeteer_navigate(url, script.get("navigate", {}))
-            
+            navigate_result = self._mcp_puppeteer_navigate(
+                url, script.get("navigate", {})
+            )
+
             # Then run any extraction scripts if navigation was successful
             if navigate_result and "error" not in navigate_result:
                 if "extract" in script:
@@ -334,20 +349,25 @@ class FirecrawlScraper:
                         extracted_data[key] = self._mcp_puppeteer_evaluate(js_script)
                     return extracted_data
                 else:
-                    return {"success": True, "message": "Navigation successful but no extraction scripts provided"}
+                    return {
+                        "success": True,
+                        "message": "Navigation successful but no extraction scripts provided",
+                    }
             else:
                 return navigate_result or {"error": "Failed to navigate to URL"}
         except Exception as e:
             logger.error(f"Error in MCP Puppeteer execution: {str(e)}")
             return {"error": str(e)}
-    
-    def _mcp_puppeteer_navigate(self, url: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+
+    def _mcp_puppeteer_navigate(
+        self, url: str, options: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         """Navigate to a URL using MCP Puppeteer.
-        
+
         Args:
             url: The URL to navigate to
             options: Additional navigation options
-            
+
         Returns:
             Response from the navigation operation
         """
@@ -360,20 +380,20 @@ class FirecrawlScraper:
             #     "allowDangerous": False,
             #     **options
             # })
-            
+
             # For now, simulate a successful response
             logger.info(f"[MCP Simulation] Navigated to {url}")
             return {"success": True}
         except Exception as e:
             logger.error(f"Error in MCP navigation: {str(e)}")
             return {"error": str(e)}
-    
+
     def _mcp_puppeteer_evaluate(self, script: str) -> Any:
         """Evaluate JavaScript in the browser context using MCP Puppeteer.
-        
+
         Args:
             script: JavaScript to execute
-            
+
         Returns:
             Result of the JavaScript evaluation
         """
@@ -382,7 +402,7 @@ class FirecrawlScraper:
             # In a real implementation, you would use:
             # from mcp_client import mcp4_puppeteer_evaluate
             # result = mcp4_puppeteer_evaluate({"script": script})
-            
+
             # For now, return a simulated result
             logger.info(f"[MCP Simulation] Evaluated script: {script[:50]}...")
             return f"Simulated result for: {script[:20]}..."
