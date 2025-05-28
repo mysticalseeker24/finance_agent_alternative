@@ -5,6 +5,8 @@ import io
 import json
 import base64
 import requests
+import sys
+from pathlib import Path
 from datetime import datetime, timedelta
 
 import streamlit as st
@@ -13,6 +15,10 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from loguru import logger
+
+# Add the project root directory to Python path to find the config module
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
 
 from config import Config
 
