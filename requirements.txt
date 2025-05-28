@@ -23,7 +23,7 @@ transformers>=4.30.2
 
 # Voice processing
 openai-whisper>=20231117
-sarvam-ai-tts>=0.1.0
+# Using Sarvam AI via REST API directly
 elevenlabs>=0.2.24
 pydub>=0.25.1
 sounddevice>=0.4.6
