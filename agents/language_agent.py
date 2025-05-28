@@ -13,6 +13,7 @@ from langchain.chains import LLMChain
 from langgraph.graph import END, StateGraph
 
 from agents.base_agent import BaseAgent
+from config import Config
 
 
 class LanguageAgent(BaseAgent):

@@ -204,6 +204,9 @@ with tabs[0]:
             if query:
                 with st.spinner("Processing your question..."):
                     try:
+                        # Determine voice output based on user preference
+                        voice_output = st.session_state.output_preference in ["Voice (English)", "Both Text and Voice"]
+                        
                         # Create the request payload
                         payload = {
                             "query": query,
@@ -228,6 +231,9 @@ with tabs[0]:
                             # Display the response
                             st.subheader("Answer")
                             st.write(result["response"])
+                            
+                            # Determine if voice output is enabled based on user preference
+                            voice_output = st.session_state.output_preference in ["Voice (English)", "Both Text and Voice"]
                             
                             # Display audio if available and voice output is enabled
                             if voice_output and result.get("audio_url"):
