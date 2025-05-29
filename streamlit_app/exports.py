@@ -76,7 +76,7 @@ def convert_text_to_speech(api_base_url, text):
         response = requests.post(
             f"{api_base_url}/api/v1/voice/tts",
             headers={"Content-Type": "application/json"},
-            json={"text": text},
+            json={"text": text, "voice_id": "default"},
             timeout=30,
         )
         if response.status_code == 200:
