@@ -222,13 +222,13 @@ class AnalysisAgent(BaseAgent):
             return {"error": f"Error calculating risk: {str(e)}"}
 
     async def _analyze_portfolio(
-        self,
-        portfolio: List[Dict[str, Any]], 
-        asset_metadata: Optional[Dict[str, Dict[str, Any]]] = None, 
-        portfolio_asset_historical_prices: pd.DataFrame, 
-        benchmark_historical_prices: Optional[pd.DataFrame] = None, 
-        risk_free_rate: float = 0.0
-    ) -> Dict[str, Any]:
+    self,
+    portfolio: List[Dict[str, Any]], 
+    portfolio_asset_historical_prices: pd.DataFrame,  # Moved this required parameter up
+    asset_metadata: Optional[Dict[str, Dict[str, Any]]] = None, 
+    benchmark_historical_prices: Optional[pd.DataFrame] = None, 
+    risk_free_rate: float = 0.0
+) -> Dict[str, Any]:
         """Analyze a portfolio's composition and risk.
         Args:
             portfolio: List of portfolio items with ticker and weight.
