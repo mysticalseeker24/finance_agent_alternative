@@ -97,6 +97,12 @@ Configure at least ONE of these LLM providers:
    ```
    OPENAI_API_KEY=your_openai_api_key
    ```
+   You can also specify the chat model used by the Language Agent by setting the `OPENAI_CHAT_MODEL_NAME` variable. It defaults to "gpt-4o" if not set.
+   ```
+   # Optional: Specify the OpenAI chat model (e.g., gpt-4o, gpt-4o-mini, gpt-3.5-turbo)
+   # OPENAI_CHAT_MODEL_NAME=gpt-4o 
+   ```
+   Refer to `.env.example` for the exact variable name and example.
 
 ##### Option 2: Anthropic
 
@@ -182,6 +188,15 @@ FASTAPI_PORT=8000  # Port for the API server
 ```
 STREAMLIT_PORT=8501  # Port for the Streamlit app
 ```
+
+#### Default Portfolio (Optional)
+
+You can define a default portfolio that the system uses (e.g., for market briefs if no specific user portfolio is implemented). This is set via the `DEFAULT_PORTFOLIO_JSON` environment variable in your `.env` file.
+
+-   **`DEFAULT_PORTFOLIO_JSON`**: A JSON string representing a list of portfolio items. Each item should be a dictionary with keys like "ticker", "weight", and optionally "shares".
+    Example: `'[{"ticker": "AAPL", "weight": 0.5, "shares": 10}, {"ticker": "MSFT", "weight": 0.5, "shares": 5}]'`
+
+    Refer to the commented example in `.env.example` for formatting. If this variable is not set or is invalid JSON, a hardcoded default portfolio within the application will be used.
 
 ## Vector Database Setup
 

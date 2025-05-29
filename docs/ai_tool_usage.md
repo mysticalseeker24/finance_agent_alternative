@@ -25,19 +25,48 @@ Below are illustrative examples of prompts that could have been used to generate
     "Draft a Mermaid syntax diagram for a multi-agent financial system with components: User, Streamlit UI, FastAPI Orchestrator, specialized agents (API, Scraping, Analysis, Language, Voice, Retriever), Data Ingestion modules, Pinecone, Redis, and external data sources."
     ```
 
+*   **For `RetrieverAgent` - Embedding Caching Logic:**
+    ```
+    "Design a Python caching mechanism for sentence embeddings in the RetrieverAgent. It should use Redis. The cache key should incorporate the embedding model name and a hash of the text. Embeddings should be stored as bytes and retrieved as numpy arrays. Implement methods for getting from cache and putting into cache with an expiry of 7 days."
+    ```
+
+*   **For `Orchestrator` - `_gather_data_for_query` method:**
+    ```
+    "Develop a Python async method for the Orchestrator called '_gather_data_for_query'. It should take a user query string and retrieved context (list of dicts) as input. Based on keywords in the query (e.g., 'portfolio', 'market', 'news', stock tickers), it should call appropriate methods on other agents (api_agent, analysis_agent, scraping_agent) to fetch relevant data. Consolidate all fetched data into a dictionary. Include basic ticker extraction logic for common stock symbols."
+    ```
+
+*   **For `FirecrawlScraper` - `crawl_website` method (using `firecrawl-py` SDK):**
+    ```
+    "Implement an async method 'crawl_website' in the FirecrawlScraper class. This method should use the 'crawl_url' function from the 'firecrawl-py' SDK (e.g., 'self.app.crawl_url') executed via 'asyncio.to_thread' due to its synchronous nature. The method should accept a URL to crawl ('url_to_crawl'), an optional dictionary 'crawler_options' (to be passed as 'params' to the SDK's 'crawl_url'), and an optional 'timeout_seconds' (defaulting to 180). Process the list of results from the SDK; each item in the list should be transformed into a dictionary containing 'success' (bool), 'url' (str, from 'sourceURL' or 'url' in SDK item), 'content' (str, preferring 'markdown' over 'content'), 'metadata' (dict), and 'raw_data' (the original SDK item for that page). Implement comprehensive error handling for SDK calls (general exceptions) and asyncio timeouts, returning a list containing a single error dictionary in case of such failures."
+    ```
+
 These examples represent a fraction of the interactions but showcase how AI was used to accelerate development, implement complex algorithms, and structure the application.
 
 ## 3. AI Model Parameters and Configurations
 
 ### Primary Language Model (LLM)
 
-*   **Model Used:** OpenAI `gpt-4-1106-preview` (GPT-4 Turbo).
-    *   This model was selected for its strong reasoning capabilities, large context window, and ability to follow complex instructions necessary for code generation, refactoring, and natural language processing tasks within the `LanguageAgent`.
+*   **Model Used:** OpenAI model specified by `Config.OPENAI_CHAT_MODEL_NAME`, defaulting to `gpt-4o`. Previously `gpt-4-1106-preview`.
+    *   This model (e.g., `gpt-4o`) is selected for its strong reasoning capabilities, large context window, speed, and improved cost-effectiveness, suitable for tasks within the `LanguageAgent`.
 *   **Configuration in `LanguageAgent`:**
     *   `temperature`: `0.7` (This setting balances creativity and determinism, suitable for generating diverse yet coherent financial narratives and responses).
 *   **Usage:**
     *   Dynamic response generation in LangGraph workflows within the `LanguageAgent` (e.g., for market briefs and query responses).
     *   Query reformulation in the `Orchestrator` (via `LanguageAgent.reformulate_query`) to improve RAG retrieval quality.
+
+### System Prompts for Language Agent
+
+To enhance contextual relevance and guide the Language Agent's behavior, specific system prompts have been implemented:
+
+*   **`SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT`**:
+    *   **Purpose**: Provides overall guidance to the LLM when acting as a financial assistant (e.g., for market brief generation, query responses).
+    *   **Content Summary**: Instructs the LLM to be a specialized financial assistant, focus on data-driven insights related to finance, maintain a professional and analytical tone, and avoid speculation, financial advice, or non-financial topics. It also emphasizes basing responses on provided information.
+    *   **Implementation**: Prepended to various prompt templates within the `LanguageAgent`'s graph workflows and helper methods.
+
+*   **`SYSTEM_GUIDANCE_QUERY_REFORMULATION`**:
+    *   **Purpose**: Guides the LLM specifically when reformulating user queries for better search results.
+    *   **Content Summary**: Instructs the LLM to act as an AI assistant refining financial queries, aiming for clarity, specificity, or appropriate breadth while strictly maintaining financial context, and to return only the reformulated query.
+    *   **Implementation**: Prepended to the prompt template in the `LanguageAgent.reformulate_query` method.
 
 ### Embedding Models (SentenceTransformers)
 
@@ -48,16 +77,16 @@ These examples represent a fraction of the interactions but showcase how AI was 
     *   **Caching:** Embeddings generated by this model are cached in Redis to reduce redundant computations, as implemented in `RetrieverAgent`.
 
 *   **Secondary Model (Conceptual):**
-    *   **Configuration:** Loaded if a model name/path is specified in `Config.SECONDARY_EMBEDDING_MODEL` (e.g., `all-MiniLM-L6-v2`).
-    *   **Usage:** The `RetrieverAgent` is equipped to load this model. However, no active use-case (e.g., re-ranking search results, query expansion with a different embedding strategy) has been implemented in the current version of the project. Its inclusion is for future experimentation.
+    *   **Configuration:** Loaded if a model name/path is specified in `Config.SECONDARY_EMBEDDING_MODEL` (e.g., `stsb-xlm-r-multilingual`). This model also has 1024 dimensions, allowing for direct comparison or use with the primary Pinecone index.
+    *   **Usage:** The `RetrieverAgent` is equipped to load this model. Potential experimental uses include comparing retrieval results against the primary RoBERTa model, exploring multilingual capabilities, or using it in ensemble methods. No active use-case has been implemented in the current version.
 
 ### Speech-to-Text (STT)
 
 *   **Model:** OpenAI Whisper.
-*   **Default Loaded:** The `medium` model is loaded by default in `VoiceAgent.initialize_stt_model()` if no fine-tuned model is specified.
-    *   **Rationale for "medium":** Chosen as a balance between performance and broader multilingual support compared to smaller models like `base` or `small`.
+*   **Default Loaded:** The `base.en` model is loaded by default in `VoiceAgent.initialize_stt_model()` if no fine-tuned model is specified.
+    *   **Rationale for "base.en":** Chosen as a good balance of speed and performance for English language audio, and allows for more focused fine-tuning if desired. It can be replaced by a user-specified fine-tuned model via configuration.
 *   **Custom Model Support:** The system supports loading a pre-fine-tuned Whisper model if its path or Hugging Face Hub name is provided via the `Config.WHISPER_FINETUNED_MODEL_PATH` environment variable.
-*   **Note on Model Choice:** The project specification document mentioned potentially using `base.en`. The decision to default to "medium" was made to ensure better out-of-the-box support for multiple languages (including Hindi as per project context) before any specific fine-tuning efforts.
+*   **Note on Model Choice:** The default model has been set to `base.en` to provide a lightweight, English-focused starting point. Users can specify a different or fine-tuned model via `Config.WHISPER_FINETUNED_MODEL_PATH`.
 
 ### Text-to-Speech (TTS)
 
@@ -67,7 +96,9 @@ These examples represent a fraction of the interactions but showcase how AI was 
         *   `model`: Value from `Config.VOICE_MODEL`.
         *   `voice_preset`: `"default"`.
         *   `audioformat`: `"mp3"`.
-    *   **Note on Pitch/Pace:** The project specification mentioned "pitch=0, pace=1.0". The current `VoiceAgent._sarvam_ai_tts` method does not explicitly pass these pitch/pace parameters. It relies on the default behavior of the Sarvam API for the selected voice model and preset. If more granular control is needed, the API call payload in `VoiceAgent` would need to be updated.
+        *   `pitch`: `0` (Integer value).
+        *   `speaking_rate`: `1.0` (Float value, controls pace).
+    *   **Note on Pitch/Pace:** The `VoiceAgent._sarvam_ai_tts` method now includes `"pitch": 0` and `"speaking_rate": 1.0` in the API payload to align with typical TTS customization options.
 
 *   **ElevenLabs (Fallback):**
     *   **Model ID:** `eleven_monolingual_v1` (as specified in `VoiceAgent._elevenlabs_tts`).

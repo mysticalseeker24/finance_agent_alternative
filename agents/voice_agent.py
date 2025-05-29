@@ -116,7 +116,7 @@ class VoiceAgent(BaseAgent):
                     model_identifier_for_log = "N/A" # Reset identifier
             
             if not model_to_load: # If no tuned path or if loading tuned path failed
-                default_model_name = "medium"
+                default_model_name = "base.en" # Changed default model
                 logger.info(f"Loading default Whisper model: {default_model_name}")
                 self.stt_model = await asyncio.to_thread(whisper.load_model, default_model_name)
                 loaded_model_type = f"Default"
@@ -518,6 +518,8 @@ class VoiceAgent(BaseAgent):
                 "model": voice,  # Default is 'meera'
                 "voice_preset": "default",
                 "audioformat": "mp3",
+                "pitch": 0,             # Added
+                "speaking_rate": 1.0    # Added (or "pace": 1.0 if that's the correct Sarvam term)
             }
 
             # Make API request
