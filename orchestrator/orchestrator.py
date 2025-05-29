@@ -32,6 +32,16 @@ class Orchestrator:
         self.language_agent = LanguageAgent()
         self.voice_agent = VoiceAgent()
 
+        # Create agents dictionary for easier access in tests
+        self.agents = {
+            "api_agent": self.api_agent,
+            "scraping_agent": self.scraping_agent,
+            "retriever_agent": self.retriever_agent,
+            "analysis_agent": self.analysis_agent,
+            "language_agent": self.language_agent,
+            "voice_agent": self.voice_agent,
+        }
+
         # Initialize agent status tracking
         self.agent_status = {
             "api_agent": "initialized",

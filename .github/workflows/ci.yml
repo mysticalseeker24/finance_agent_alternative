@@ -33,6 +33,19 @@ jobs:
         pip install pytest pytest-asyncio pytest-cov
     
     - name: Run tests
+      env:
+        PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+        PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OPENAI_CHAT_MODEL_NAME: ${{ secrets.OPENAI_CHAT_MODEL_NAME }}
+        SARVAM_AI_API_KEY: ${{ secrets.SARVAM_AI_API_KEY }}
+        ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+        FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        REDIS_HOST: ${{ secrets.REDIS_HOST }}
+        REDIS_PORT: ${{ secrets.REDIS_PORT }}
+        REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+        DEBUG: 'True'
+        LOG_LEVEL: INFO
       run: |
         pytest --cov=./ --cov-report=xml
     
