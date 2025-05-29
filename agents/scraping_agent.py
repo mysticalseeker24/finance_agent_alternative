@@ -30,8 +30,16 @@ class ScrapingAgent(BaseAgent):
             request: The request containing operation and parameters.
                     Expected format:
                     {
-                        "operation": "scrape_news"|"scrape_sec_filings"|"scrape_earnings"|"scrape_url",
-                        "parameters": {...}  # Operation-specific parameters
+                        "operation": "scrape_news"|"scrape_sec_filings"|"scrape_earnings"|"scrape_url"|"crawl_website",
+                        "parameters": {
+                            "url": "...",  # For scrape_url, crawl_website
+                            "sources": ["..."], # For scrape_news
+                            "tickers": ["..."], # For scrape_sec_filings
+                            "ticker": "...", # For scrape_earnings
+                            "page_options": {...}, # For scrape_url
+                            "extractor_options": {...}, # For scrape_url
+                            "crawler_options": {...} # For crawl_website
+                        }
                     }
 
         Returns:
@@ -50,9 +58,7 @@ class ScrapingAgent(BaseAgent):
 
             if use_firecrawl:
                 # Use Firecrawl for dynamic content
-                news = await asyncio.to_thread(
-                    self.firecrawl_scraper.scrape_financial_news, sources
-                )
+                news = await self.firecrawl_scraper.scrape_financial_news(sources=sources)
                 return {"data": news, "source": "Firecrawl"}
             else:
                 # Use Scrapy for static content
@@ -78,22 +84,36 @@ class ScrapingAgent(BaseAgent):
             if not ticker:
                 return {"error": "No ticker specified for scrape_earnings operation"}
 
-            earnings = await asyncio.to_thread(
-                self.firecrawl_scraper.scrape_earnings_report, ticker
-            )
+            earnings = await self.firecrawl_scraper.scrape_earnings_report(ticker=ticker)
             return {"data": earnings, "source": "Firecrawl"}
 
         elif operation == "scrape_url":
             url = parameters.get("url")
-            selectors = parameters.get("selectors")
+            page_options = parameters.get("page_options")
+            extractor_options = parameters.get("extractor_options")
 
             if not url:
                 return {"error": "No URL specified for scrape_url operation"}
 
-            content = await asyncio.to_thread(
-                self.firecrawl_scraper.scrape_url, url, selectors
+            content = await self.firecrawl_scraper.scrape_url(
+                url_to_scrape=url, 
+                page_options=page_options,
+                extractor_options=extractor_options
             )
             return {"data": content, "source": "Firecrawl"}
+
+        elif operation == "crawl_website":
+            url = parameters.get("url")
+            crawler_options = parameters.get("crawler_options") 
+            
+            if not url:
+                return {"error": "No URL specified for crawl_website operation"}
+            
+            crawl_data = await self.firecrawl_scraper.crawl_website(
+                url_to_crawl=url, 
+                crawler_options=crawler_options
+            )
+            return {"data": crawl_data, "source": "Firecrawl"}
 
         else:
             return {"error": f"Unknown operation: {operation}"}
@@ -144,22 +164,42 @@ class ScrapingAgent(BaseAgent):
         return await self.run(request)
 
     async def scrape_url(
-        self, url: str, selectors: Optional[Dict[str, str]] = None
+        self, url: str, page_options: Optional[Dict] = None, extractor_options: Optional[Dict] = None
     ) -> Dict[str, Any]:
-        """Scrape content from a specific URL.
+        """Scrape content from a specific URL using Firecrawl.
 
         Args:
             url: The URL to scrape.
-            selectors: CSS selectors to extract specific content.
+            page_options: Options for page loading (e.g., screenshot, headers).
+            extractor_options: Options for LLM-based extraction.
 
         Returns:
             Scraped content.
         """
-        request = {
+        request_payload = { 
             "operation": "scrape_url",
-            "parameters": {"url": url, "selectors": selectors},
+            "parameters": {"url": url, "page_options": page_options, "extractor_options": extractor_options},
         }
-        return await self.run(request)
+        return await self.run(request_payload) 
+
+    async def crawl_website(
+        self, url: str, crawler_options: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Crawl a website using Firecrawl.
+
+        Args:
+            url: The base URL to start crawling from.
+            crawler_options: Dictionary of crawler options (e.g., includes, excludes, maxDepth).
+                             These are passed as 'params' to the Firecrawl SDK's crawl_url method.
+
+        Returns:
+            A list of scraped page data or an error dictionary.
+        """
+        request_payload = {
+            "operation": "crawl_website",
+            "parameters": {"url": url, "crawler_options": crawler_options},
+        }
+        return await self.run(request_payload)
 
     async def scrape_market_news(self) -> Dict[str, Any]:
         """Scrape the latest market news from multiple sources.

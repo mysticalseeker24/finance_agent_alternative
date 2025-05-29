@@ -1,51 +1,46 @@
-"""Firecrawl integration for scraping web content using Firecrawl's public REST API."""
+"""Firecrawl integration for scraping web content using the firecrawl-py SDK."""
 
-import json
+import json # Keep for potential use, though SDK might reduce direct JSON handling
 from typing import Dict, List, Any, Optional
-from datetime import datetime
-import asyncio # Added for potential concurrent calls in future, though not strictly used by aiohttp per call
+from datetime import datetime # Keep for potential use
+import asyncio
 
-import aiohttp # Added
+from firecrawl import FirecrawlApp # Added
 from loguru import logger
 
 from config import Config
 
 
 class FirecrawlScraper:
-    """Scraper using Firecrawl's public REST API for web content."""
+    """Scraper using the firecrawl-py SDK for web content."""
 
-    def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None):
-        """Initialize the Firecrawl scraper.
+    def __init__(self, api_key: Optional[str] = None):
+        """Initialize the Firecrawl scraper using the SDK.
 
         Args:
-            api_url: The Firecrawl API URL (defaults to Config.FIRECRAWL_API_URL).
             api_key: The Firecrawl API key (defaults to Config.FIRECRAWL_API_KEY).
         """
-        self.api_url = api_url or Config.FIRECRAWL_API_URL
         self.api_key = api_key or Config.FIRECRAWL_API_KEY
+        self.app = None # Initialize app attribute
+
         if not self.api_key:
             logger.error("Firecrawl API key not configured. FirecrawlScraper will not work.")
-        if not self.api_url: # Should default in Config, but good to check
-             logger.error("Firecrawl API URL not configured. FirecrawlScraper will not work.")
-        # Ensure api_url does not end with /scrape, as it will be added.
-        if self.api_url and self.api_url.endswith("/scrape"):
-            self.api_url = self.api_url[:-7] # Remove /scrape
-        if self.api_url and self.api_url.endswith("/"):
-            self.api_url = self.api_url[:-1] # Remove trailing slash
-
-
-        logger.info(
-            f"FirecrawlScraper initialized to use API endpoint: {self.api_url}"
-        )
+        else:
+            try:
+                self.app = FirecrawlApp(api_key=self.api_key)
+                logger.info("FirecrawlApp SDK initialized successfully.")
+            except Exception as e:
+                logger.error(f"Failed to initialize FirecrawlApp SDK: {str(e)}")
+                self.app = None # Ensure app is None if initialization fails
 
     async def scrape_url(
         self, 
         url_to_scrape: str, 
         page_options: Optional[Dict] = None, 
         extractor_options: Optional[Dict] = None,
-        timeout_seconds: int = 30 # Added timeout
+        timeout_seconds: int = 30
     ) -> Dict[str, Any]:
-        """Scrape content from a URL using Firecrawl's /scrape endpoint.
+        """Scrape content from a URL using the Firecrawl SDK.
 
         Args:
             url_to_scrape: The URL to scrape.
@@ -53,83 +48,74 @@ class FirecrawlScraper:
                           Defaults to {"onlyMainContent": True, "includeHtml": False}.
             extractor_options: Options for LLM-based extraction (e.g., schema, model).
                                Defaults to None.
-            timeout_seconds: Timeout for the API request.
+            timeout_seconds: Timeout for the API request in seconds.
 
         Returns:
             A dictionary containing the scraped content or an error.
         """
-        if not self.api_key or not self.api_url:
-            return {"success": False, "url": url_to_scrape, "error": "Firecrawl API key or URL not configured."}
+        if not self.app:
+            return {"success": False, "url": url_to_scrape, "error": "FirecrawlApp not initialized due to missing API key or initialization failure."}
 
-        scrape_endpoint = f"{self.api_url}/scrape"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        payload = {"url": url_to_scrape}
-        payload["pageOptions"] = page_options if page_options is not None else {"onlyMainContent": True, "includeHtml": False}
+        current_page_options = page_options if page_options is not None else {"onlyMainContent": True, "includeHtml": False}
         
-        if extractor_options: # Only include if provided and not None/empty
-            payload["extractorOptions"] = extractor_options # Corrected key from "extractor" to "extractorOptions"
-
-        logger.info(f"Requesting Firecrawl scrape for URL: {url_to_scrape} with payload: {payload}")
+        logger.info(f"Requesting Firecrawl SDK scrape for URL: {url_to_scrape} with page_options: {current_page_options}, extractor_options: {extractor_options}")
 
         try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.post(scrape_endpoint, json=payload, timeout=timeout_seconds) as response:
-                    if response.status == 200:
-                        response_data = await response.json()
-                        # Firecrawl's /scrape response structure: {"data": {"content": ..., "markdown": ..., "metadata": ...}}
-                        # or sometimes directly {"content": ..., "markdown": ...} if success is implied by 200
-                        
-                        data_content = response_data.get("data", response_data) # Handle both structures
+            # The firecrawl-py SDK's scrape_url method is synchronous.
+            # We run it in a thread to avoid blocking the asyncio event loop.
+            sdk_response = await asyncio.to_thread(
+                self.app.scrape_url,
+                url=url_to_scrape,
+                page_options=current_page_options,
+                extractor_options=extractor_options if extractor_options else None,
+                timeout=timeout_seconds * 1000  # Convert seconds to milliseconds for SDK
+            )
+            
+            # The SDK returns a Pydantic model-like object or dict. 
+            # It behaves like a dict, so direct .get() access should work.
+            # If it were a Pydantic model and we needed a true dict:
+            # sdk_response_dict = sdk_response.dict() if hasattr(sdk_response, 'dict') else sdk_response
 
-                        chosen_content = data_content.get("markdown", data_content.get("content", ""))
-                        metadata = data_content.get("metadata", {})
-                        
-                        logger.info(f"Successfully scraped URL: {url_to_scrape}")
-                        return {
-                            "success": True,
-                            "url": url_to_scrape,
-                            "content": chosen_content,
-                            "metadata": metadata, # Includes title, description, etc.
-                            "raw_data": data_content # Include for potential downstream use
-                        }
-                    else:
-                        error_details = await response.text()
-                        logger.error(
-                            f"Firecrawl API error for {url_to_scrape}: {response.status} - {error_details}"
-                        )
-                        return {
-                            "success": False,
-                            "url": url_to_scrape,
-                            "error": f"Firecrawl API Error: {response.status}",
-                            "details": error_details,
-                        }
-        except aiohttp.ClientError as e:
-            logger.error(f"aiohttp.ClientError scraping {url_to_scrape}: {str(e)}")
+            # Assuming sdk_response is directly usable as a dict:
+            chosen_content = sdk_response.get("markdown") or sdk_response.get("content", "")
+            metadata = sdk_response.get("metadata", {})
+            
+            logger.info(f"Successfully scraped URL via SDK: {url_to_scrape}")
             return {
-                "success": False,
+                "success": True,
                 "url": url_to_scrape,
-                "error": "Client/Network Error",
-                "details": str(e),
+                "content": chosen_content,
+                "metadata": metadata,
+                "raw_data": sdk_response # Store the entire SDK response
             }
-        except asyncio.TimeoutError: # Specifically catch timeout
-            logger.error(f"Timeout scraping {url_to_scrape} after {timeout_seconds} seconds.")
+        # It's good practice to catch more specific exceptions if known for the SDK.
+        # For now, a general Exception is used as per the prompt's example.
+        # Common exceptions from HTTP clients include connection errors, timeouts.
+        # The FirecrawlApp might raise its own specific exceptions.
+        except asyncio.TimeoutError: # This catches timeout for asyncio.to_thread itself
+            logger.error(f"asyncio.to_thread call timed out scraping {url_to_scrape} after {timeout_seconds} seconds.")
             return {
                 "success": False,
                 "url": url_to_scrape,
-                "error": "Timeout",
-                "details": f"Scraping timed out after {timeout_seconds} seconds.",
+                "error": "Operation Timeout", # Distinguish from SDK's internal timeout
+                "details": f"Scraping operation timed out after {timeout_seconds} seconds.",
             }
-        except Exception as e:
-            logger.error(f"Unexpected error scraping {url_to_scrape}: {str(e)}")
+        except Exception as e: 
+            logger.error(f"Firecrawl SDK error scraping {url_to_scrape}: {type(e).__name__} - {str(e)}")
+            # Check if the exception 'e' has a 'response' attribute for more details (like status code)
+            details = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_content = e.response.json() # Or e.response.text()
+                    details = f"{str(e)} - Response: {error_content}"
+                except ValueError: # If response is not JSON
+                    details = f"{str(e)} - Response: {e.response.text}"
+            
             return {
                 "success": False,
                 "url": url_to_scrape,
-                "error": "Unexpected Error",
-                "details": str(e),
+                "error": f"Firecrawl SDK Error: {type(e).__name__}",
+                "details": details,
             }
 
     async def scrape_financial_news(
@@ -230,6 +216,87 @@ class FirecrawlScraper:
                 "details": scrape_result.get("details"),
                 "source": "Firecrawl"
             }
+
+    async def crawl_website(
+        self, 
+        url_to_crawl: str, 
+        crawler_options: Optional[Dict] = None, # These are the 'params' for SDK's crawl_url
+        timeout_seconds: int = 180 
+    ) -> List[Dict[str, Any]]:
+        """Crawl a website starting from a specific URL using the Firecrawl SDK.
+
+        Args:
+            url_to_crawl: The starting URL for the crawl.
+            crawler_options: A dictionary of options to pass to the Firecrawl SDK's
+                             `crawl_url` method via its `params` argument. This can include
+                             options like:
+                             - `includes`: List of URL patterns to include.
+                             - `excludes`: List of URL patterns to exclude.
+                             - `maxDepth`: Maximum crawl depth.
+                             - `limit`: Maximum number of pages to crawl.
+                             - `pageOptions`: Dictionary of page options for each page crawled 
+                               (e.g., `onlyMainContent`, `includeHtml`).
+                             - `extractorOptions`: Dictionary of extractor options for each page
+                               (e.g., `extractionSchema`, `mode`).
+                             - `generateTags`: Boolean, whether to generate AI-powered tags.
+                             - `returnOnlyUrls`: Boolean, whether to return only URLs.
+            timeout_seconds: Timeout for the entire crawl operation in seconds.
+
+        Returns:
+            A list of dictionaries. Each dictionary represents a successfully crawled page
+            and contains keys like `success` (bool), `url` (str), `content` (str, markdown or text),
+            `metadata` (dict), and `raw_data` (the raw SDK response for that page).
+            If the crawl operation fails globally (e.g., SDK initialization error, top-level timeout),
+            it returns a list containing a single error dictionary:
+            `[{"success": False, "url": url_to_crawl, "error": "Error message", "details": "..."}]`.
+        """
+        if not self.app:
+            return [{"success": False, "url": url_to_crawl, "error": "FirecrawlApp not initialized due to missing API key or initialization failure."}]
+
+        logger.info(f"Requesting Firecrawl SDK crawl for URL: {url_to_crawl} with crawler_options: {crawler_options}")
+
+        try:
+            # SDK's crawl_url is synchronous
+            crawl_results_sdk = await asyncio.to_thread(
+                self.app.crawl_url,
+                url=url_to_crawl,
+                params=crawler_options, # Pass crawler_options as params
+                timeout=timeout_seconds * 1000 # Convert seconds to milliseconds
+            )
+            
+            processed_results = []
+            if crawl_results_sdk: # Ensure it's not None or empty
+                for item_data in crawl_results_sdk:
+                    # Assuming item_data is a dict-like object
+                    # Based on SDK documentation, the URL of the crawled page is in 'sourceURL'
+                    page_url = item_data.get("sourceURL") or item_data.get("url") 
+                    chosen_content = item_data.get("markdown") or item_data.get("content", "")
+                    metadata = item_data.get("metadata", {})
+                    
+                    processed_results.append({
+                        "success": True,
+                        "url": page_url,
+                        "content": chosen_content,
+                        "metadata": metadata,
+                        "raw_data": item_data 
+                    })
+            logger.info(f"Successfully crawled URL via SDK: {url_to_crawl}, found {len(processed_results)} pages.")
+            return processed_results
+            
+        except asyncio.TimeoutError:
+            logger.error(f"asyncio.to_thread call timed out crawling {url_to_crawl} after {timeout_seconds} seconds.")
+            return [{"success": False, "url": url_to_crawl, "error": "Operation Timeout", "details": f"Crawl operation timed out after {timeout_seconds} seconds."}]
+        except Exception as e:
+            logger.error(f"Firecrawl SDK error crawling {url_to_crawl}: {type(e).__name__} - {str(e)}")
+            details = str(e)
+            # Attempt to get more details if the exception has a response attribute (e.g., from HTTP errors)
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_content = e.response.json()
+                    details = f"{str(e)} - Response: {error_content}"
+                except ValueError: # If response content is not JSON
+                    details = f"{str(e)} - Response: {e.response.text}"
+            return [{"success": False, "url": url_to_crawl, "error": f"Firecrawl SDK Crawl Error: {type(e).__name__}", "details": details}]
 
 
 if __name__ == "__main__":

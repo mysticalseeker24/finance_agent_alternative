@@ -24,11 +24,6 @@ class Config:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
     FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
 
-    # MCP Configuration
-    FIRECRAWL_MCP_SERVER = os.getenv("FIRECRAWL_MCP_SERVER", "puppeteer")
-    # The FIRECRAWL_API_URL below under "External Service URLs" is the primary one.
-    # This older one for MCP is effectively deprecated by the move to the public API.
-
     # LLM Provider
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
     LOCAL_MODEL_PATH = os.getenv("LOCAL_MODEL_PATH")
@@ -61,10 +56,6 @@ class Config:
     VOICE_MODEL = os.getenv("VOICE_MODEL", "meera")
     # Optional: Path to a fine-tuned Whisper model directory or Hugging Face Hub model name.
     WHISPER_FINETUNED_MODEL_PATH = os.getenv("WHISPER_FINETUNED_MODEL_PATH", None)
-
-    # External Service URLs
-    # Defaulting to Firecrawl's v0 API base for core scrape/crawl operations.
-    FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev/v0") 
 
     # Required API Key Groups
     # At least one from each group must be present

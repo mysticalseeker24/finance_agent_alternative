@@ -52,6 +52,7 @@ The data ingestion layer is responsible for gathering data from various sources 
 
 - Handles dynamic content that requires JavaScript rendering
 - Provides structured data from complex web pages
+- Supports both targeted URL scraping and website crawling.
 - Complements Scrapy for comprehensive web data extraction
 
 ### 2. Agent System
@@ -68,6 +69,7 @@ The agent system consists of specialized agents that work together to process qu
 
 - Coordinates between Scrapy and Firecrawl
 - Extracts financial news, earnings reports, and SEC filings
+- Can perform targeted URL scraping and broader website crawling.
 - Processes and normalizes web data
 
 #### Retriever Agent
