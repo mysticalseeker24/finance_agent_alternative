@@ -25,6 +25,7 @@ cp .env.example .env
 ```
 
 Then edit the `.env` file with your actual API keys and configuration values.
+This includes setting your desired `EMBEDDING_MODEL` (primary model for generating embeddings) and optionally the `SECONDARY_EMBEDDING_MODEL` (for experimentation, e.g., re-ranking). Refer to the comments in `.env.example` for model choices and their implications (like embedding dimensions).
 
 ### 2. Required API Keys
 
@@ -191,7 +192,7 @@ The system will automatically create a Pinecone index if it doesn't exist, but y
 1. Go to your Pinecone dashboard
 2. Create a new index with:
    - Name: `finance-data` (default, can be changed in config)
-   - Dimension: 384 (using all-MiniLM-L6-v2 embeddings)
+   - Dimension: 1024 (using the primary embedding model, e.g., roberta-large-nli-stsb-mean-tokens)
    - Metric: cosine
 
 ## Testing Your Configuration
