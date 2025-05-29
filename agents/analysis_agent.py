@@ -313,8 +313,10 @@ class AnalysisAgent(BaseAgent):
     async def _analyze_portfolio(
         self,
         portfolio: List[Dict[str, Any]],
-        portfolio_asset_historical_prices: pd.DataFrame,
-        asset_metadata: Optional[Dict[str, Dict[str, Any]]] = None,
+        portfolio_asset_historical_prices: pd.DataFrame,  # Moved up (required parameter)
+        asset_metadata: Optional[
+            Dict[str, Dict[str, Any]]
+        ] = None,  # Moved down (optional)
         benchmark_historical_prices: Optional[pd.DataFrame] = None,
         risk_free_rate: float = 0.0,
     ) -> Dict[str, Any]:
