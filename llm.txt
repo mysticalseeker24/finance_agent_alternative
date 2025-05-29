@@ -35,7 +35,7 @@ The system follows a microservices architecture with specialized agents orchestr
 
 4. **Analysis Agent**: Performs financial calculations, risk assessments, and portfolio analysis using Python financial libraries.
 
-5. **Language Agent**: Processes natural language using GPT-4.1 to generate coherent and contextually relevant responses.
+5. **Language Agent**: Processes natural language using a configurable OpenAI model (defaulting to gpt-4o, set via `OPENAI_CHAT_MODEL_NAME` in config) to generate coherent and contextually relevant responses.
 
 6. **Voice Agent**: Handles speech-to-text (Whisper) and text-to-speech (Sarvam AI/ElevenLabs) operations with support for both Hindi and English.
 
@@ -49,7 +49,7 @@ The system follows a microservices architecture with specialized agents orchestr
 
 ### Key Technologies
 
-- **Language Models**: GPT-4.1 (OpenAI)
+- **Language Models**: OpenAI (configurable, e.g., GPT-4o via `OPENAI_CHAT_MODEL_NAME`), SentenceTransformers
 - **Voice Processing**: Whisper (STT), Sarvam AI/ElevenLabs (TTS)
 - **Vector Store**: Pinecone with SentenceTransformers
 - **Data Processing**: Pandas, NumPy, yfinance
@@ -86,7 +86,7 @@ Each specialized agent handles a specific aspect of the system:
 - **Scraping Agent**: Gathers news, analyst opinions, market sentiment
 - **Retriever Agent**: Performs semantic search across the knowledge base
 - **Analysis Agent**: Calculates financial metrics, analyzes portfolios
-- **Language Agent**: Generates natural language responses using GPT-4.1
+- **Language Agent**: Generates natural language responses using a configurable OpenAI model (defaulting to gpt-4o)
 - **Voice Agent**: Processes speech inputs/outputs with language detection
 
 #### 4. Voice Processing
@@ -108,9 +108,9 @@ The frontend interface provides:
 
 ## Recent Enhancements
 
-### GPT-4.1 Integration
+### Configurable OpenAI Language Model
 
-Upgraded the Language Agent to utilize OpenAI's GPT-4.1 model ("gpt-4-1106-preview") for improved reasoning, contextual understanding, and more accurate financial analysis.
+The Language Agent now utilizes a configurable OpenAI model, specified by the `OPENAI_CHAT_MODEL_NAME` environment variable (defaulting to "gpt-4o"). This allows flexibility in choosing models like `gpt-4o`, `gpt-4o-mini`, or `gpt-3.5-turbo` based on cost and performance needs, replacing the previous hardcoded use of "gpt-4-1106-preview".
 
 ### Bilingual STT Support
 
@@ -132,7 +132,7 @@ Added functionality for users to customize their interaction experience:
 
 ### API Keys
 
-- **OPENAI_API_KEY**: Required for GPT-4.1 language model
+- **OPENAI_API_KEY**: Required for the configured OpenAI language model (e.g., GPT-4o).
 - **PINECONE_API_KEY**: For vector database operations
 - **SARVAM_AI_API_KEY**: Primary TTS service
 - **ELEVENLABS_API_KEY**: Alternative TTS service
@@ -143,6 +143,7 @@ Added functionality for users to customize their interaction experience:
 - **FASTAPI_HOST/PORT**: Backend service configuration
 - **STREAMLIT_PORT**: Frontend application port
 - **MARKET_BRIEF_HOUR/MINUTE**: Scheduling for daily briefings
+- **`OPENAI_CHAT_MODEL_NAME`**: (Optional) Specifies the OpenAI chat model to be used (e.g., "gpt-4o", "gpt-4o-mini"). Defaults to "gpt-4o" if not set.
 
 ## Development Guidelines
 
@@ -155,7 +156,7 @@ finance_agent/
 ├── agents/                 # Specialized agent implementations
 │   ├── api_agent.py        # Market data API interactions
 │   ├── analysis_agent.py   # Financial calculations
-│   ├── language_agent.py   # LLM integration (GPT-4.1)
+│   ├── language_agent.py   # LLM integration (OpenAI, configurable)
 │   ├── retriever_agent.py  # Vector store operations
 │   ├── scraping_agent.py   # Web content extraction
 │   └── voice_agent.py      # STT/TTS processing
