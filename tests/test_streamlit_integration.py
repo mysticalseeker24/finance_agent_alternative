@@ -1,8 +1,8 @@
 """Integration tests for the Streamlit application."""
 
+import json
 import unittest
 from unittest import mock
-import json
 
 import pytest
 import requests

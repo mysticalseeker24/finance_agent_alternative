@@ -1,7 +1,7 @@
 """Unit tests for the API Agent."""
 
-import unittest
 import asyncio
+import unittest
 from unittest import mock
 
 import pandas as pd

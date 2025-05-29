@@ -1,18 +1,18 @@
 """Voice Agent for handling speech-to-text and text-to-speech operations."""
 
-from typing import Dict, List, Any, Optional, Union, BinaryIO
-import os
-import io
 import asyncio
-from datetime import datetime
+import io
+import os
 import tempfile
+from datetime import datetime
+from typing import Any, BinaryIO, Dict, List, Optional, Union
 
-import whisper
+import numpy as np
 import requests
 import sounddevice as sd
-import numpy as np
-from pydub import AudioSegment
+import whisper
 from loguru import logger
+from pydub import AudioSegment
 
 from agents.base_agent import BaseAgent
 from config import Config

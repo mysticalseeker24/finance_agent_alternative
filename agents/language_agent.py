@@ -1,25 +1,24 @@
 """Language Agent for generating financial narratives using Langgraph and LangChain."""
 
-from typing import (
+import asyncio
+import json
+from datetime import datetime
+from typing import (  # Added TypedDict
+    Any,
+    Callable,
     Dict,
     List,
-    Any,
     Optional,
-    Union,
-    Callable,
     TypedDict,
-)  # Added TypedDict
-import asyncio
-from datetime import datetime
-import json
-
-from loguru import logger
-from langchain.prompts import PromptTemplate
+    Union,
+)
 
 # from langchain.schema import HumanMessage, SystemMessage # Not explicitly used in provided snippet
 # from langchain.llms import OpenAI # Replaced by ChatOpenAI in initialize_llm
 from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
 from langgraph.graph import END, StateGraph
+from loguru import logger
 
 from agents.base_agent import BaseAgent
 from config import Config

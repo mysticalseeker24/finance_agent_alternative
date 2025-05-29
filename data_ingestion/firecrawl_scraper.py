@@ -1,9 +1,9 @@
 """Firecrawl integration for scraping web content using the firecrawl-py SDK."""
 
-import json  # Keep for potential use, though SDK might reduce direct JSON handling
-from typing import Dict, List, Any, Optional
-from datetime import datetime  # Keep for potential use
 import asyncio
+import json  # Keep for potential use, though SDK might reduce direct JSON handling
+from datetime import datetime  # Keep for potential use
+from typing import Any, Dict, List, Optional
 
 from firecrawl import FirecrawlApp  # Added
 from loguru import logger

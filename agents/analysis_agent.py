@@ -1,11 +1,11 @@
 """Analysis Agent for performing quantitative financial analysis."""
 
-from typing import Dict, List, Any, Optional, Union
 import asyncio
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from loguru import logger
 
 from agents.base_agent import BaseAgent

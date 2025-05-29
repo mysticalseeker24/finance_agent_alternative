@@ -1,17 +1,17 @@
 """Scraping Agent for extracting financial data from websites."""
 
-from typing import Dict, List, Any, Optional
 import asyncio
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from agents.base_agent import BaseAgent
+from data_ingestion.firecrawl_scraper import FirecrawlScraper
 from data_ingestion.scrapy_spiders import (
-    run_spider,
     FinancialNewsSpider,
     SECFilingsSpider,
+    run_spider,
 )
-from data_ingestion.firecrawl_scraper import FirecrawlScraper
 
 
 class ScrapingAgent(BaseAgent):

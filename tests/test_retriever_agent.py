@@ -1,7 +1,7 @@
 """Unit tests for the Retriever Agent."""
 
-import unittest
 import asyncio
+import unittest
 from unittest import mock
 
 import numpy as np

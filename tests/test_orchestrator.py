@@ -1,15 +1,15 @@
 """Integration tests for the Orchestrator component."""
 
-import unittest
 import asyncio
+import unittest
 from unittest import mock
 
 import pytest
 
-from orchestrator.orchestrator import Orchestrator
 from agents.api_agent import APIAgent
-from agents.retriever_agent import RetrieverAgent
 from agents.language_agent import LanguageAgent
+from agents.retriever_agent import RetrieverAgent
+from orchestrator.orchestrator import Orchestrator
 
 
 class TestOrchestrator(unittest.TestCase):

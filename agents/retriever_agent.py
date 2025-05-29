@@ -1,16 +1,16 @@
 """Retriever Agent for managing vector store and RAG functionality."""
 
-from typing import Dict, List, Any, Optional, Union
-import json
 import asyncio
-from datetime import datetime
 import hashlib  # Added
-import numpy as np  # Added
+import json
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
+import numpy as np  # Added
 import pinecone
-from sentence_transformers import SentenceTransformer
 import redis  # Added
 from loguru import logger
+from sentence_transformers import SentenceTransformer
 
 from agents.base_agent import BaseAgent
 from config import Config

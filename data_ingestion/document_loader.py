@@ -1,8 +1,8 @@
 """Document loader for processing PDFs and extracting text from financial documents."""
 
-import os
-from typing import Dict, List, Any, Optional, Union, BinaryIO
 import io
+import os
+from typing import Any, BinaryIO, Dict, List, Optional, Union
 
 import pdfplumber
 import PyPDF2

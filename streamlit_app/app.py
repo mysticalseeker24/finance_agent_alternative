@@ -1,19 +1,19 @@
 """Streamlit application for the Finance Agent."""
 
-import os
+import base64
 import io
 import json
-import base64
-import requests
+import os
 import sys
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
+import streamlit as st
 from loguru import logger
 
 # Add the project root directory to Python path to find the config module

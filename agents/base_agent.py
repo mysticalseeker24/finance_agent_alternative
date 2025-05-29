@@ -1,8 +1,8 @@
 """Base agent class for the Finance Agent system."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 

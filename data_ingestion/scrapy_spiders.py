@@ -1,13 +1,13 @@
 """Scrapy spiders for financial data extraction."""
 
 import os
-from typing import Dict, List, Any, Iterable, Optional
 from datetime import datetime
+from typing import Any, Dict, Iterable, List, Optional
 
 import scrapy
+from loguru import logger
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
-from loguru import logger
 
 
 class FinancialNewsSpider(scrapy.Spider):

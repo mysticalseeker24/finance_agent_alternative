@@ -1,22 +1,22 @@
 """YFinance client for fetching market data."""
 
+import json  # Added for cache handling
+import re  # Added for regex parsing
 import time
-from typing import Dict, List, Any, Optional, Union
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Union
 
-import yfinance as yf
 import pandas as pd
 import redis
-from loguru import logger
-import json  # Added for cache handling
 import requests  # To catch requests.exceptions.RequestException
+import yfinance as yf
+from loguru import logger
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
-import re  # Added for regex parsing
 
 from config import Config
 from data_ingestion.firecrawl_scraper import FirecrawlScraper  # Added import

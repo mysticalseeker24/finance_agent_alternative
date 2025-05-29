@@ -1,9 +1,9 @@
 """API Agent for fetching market data using YFinance."""
 
-from typing import Dict, List, Any, Optional
 import asyncio
-import aiohttp  # Added
+from typing import Any, Dict, List, Optional
 
+import aiohttp  # Added
 from loguru import logger
 
 from agents.base_agent import BaseAgent
