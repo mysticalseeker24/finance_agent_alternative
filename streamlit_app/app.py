@@ -135,7 +135,7 @@ def generate_market_brief():
     try:
         # Make API call
         response = requests.post(f"{API_URL}/market-brief")
-        
+
         if response.status_code == 200:
             return response.json()
         else:
@@ -151,10 +151,10 @@ def convert_text_to_speech(text):
     try:
         # Prepare data
         data = {"text": text}
-        
+
         # Make API call
         response = requests.post(f"{API_URL}/tts", json=data)
-        
+
         if response.status_code == 200:
             return response.json()
         else:

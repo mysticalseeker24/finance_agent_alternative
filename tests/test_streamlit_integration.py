@@ -43,7 +43,7 @@ class TestStreamlitIntegration(unittest.TestCase):
         mock_get.return_value = mock_response
 
         # Simulate the API call made by Streamlit
-        from streamlit_app.app import fetch_market_summary
+        from streamlit_app.exports import fetch_market_summary
 
         summary = fetch_market_summary(self.api_base_url)
 
@@ -81,7 +81,7 @@ class TestStreamlitIntegration(unittest.TestCase):
         mock_post.return_value = mock_response
 
         # Simulate the API call made by Streamlit
-        from streamlit_app.app import process_query
+        from streamlit_app.exports import process_query
 
         query = "What is the current price of Apple stock?"
         use_voice = False
@@ -125,7 +125,7 @@ class TestStreamlitIntegration(unittest.TestCase):
         mock_post.return_value = mock_response
 
         # Simulate the API call made by Streamlit
-        from streamlit_app.app import generate_market_brief
+        from streamlit_app.exports import generate_market_brief
 
         portfolio = [
             {"ticker": "AAPL", "weight": 0.5},
@@ -170,7 +170,7 @@ class TestStreamlitIntegration(unittest.TestCase):
         mock_post.return_value = mock_response
 
         # Simulate the API call made by Streamlit
-        from streamlit_app.app import convert_text_to_speech
+        from streamlit_app.exports import convert_text_to_speech
 
         text = "Apple stock is currently trading at $180.95, up 0.69% today."
         audio_url = convert_text_to_speech(self.api_base_url, text)
