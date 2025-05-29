@@ -4,12 +4,12 @@ from typing import Dict, List, Any, Optional, Union
 import json
 import asyncio
 from datetime import datetime
-import hashlib # Added
-import numpy as np # Added
+import hashlib  # Added
+import numpy as np  # Added
 
 import pinecone
 from sentence_transformers import SentenceTransformer
-import redis # Added
+import redis  # Added
 from loguru import logger
 
 from agents.base_agent import BaseAgent
@@ -18,7 +18,7 @@ from config import Config
 
 class RetrieverAgent(BaseAgent):
     """Agent for managing vector store and retrieval operations.
-    
+
     Conceptual Usage of Secondary Embedding Model:
     If self.secondary_embedding_model is loaded, it could be used for:
     1. Re-ranking: Retrieve initial results with the primary model, then use the secondary
@@ -40,25 +40,29 @@ class RetrieverAgent(BaseAgent):
         super().__init__("Retriever Agent")
         self.index_name = index_name
         self.embedding_model = None
-        self.embedding_model_name = Config.EMBEDDING_MODEL # Added
-        self.secondary_embedding_model = None 
-        self.secondary_model_name = None 
+        self.embedding_model_name = Config.EMBEDDING_MODEL  # Added
+        self.secondary_embedding_model = None
+        self.secondary_model_name = None
         self.index = None
         self.initialized = False
-        
+
         # Initialize Redis cache
         try:
             self.cache = redis.Redis(
-                host=Config.REDIS_HOST, 
-                port=Config.REDIS_PORT, 
-                decode_responses=False # Store bytes for embeddings
+                host=Config.REDIS_HOST,
+                port=Config.REDIS_PORT,
+                decode_responses=False,  # Store bytes for embeddings
             )
-            self.cache.ping() # Check connection
-            logger.info(f"RetrieverAgent connected to Redis cache at {Config.REDIS_HOST}:{Config.REDIS_PORT}")
+            self.cache.ping()  # Check connection
+            logger.info(
+                f"RetrieverAgent connected to Redis cache at {Config.REDIS_HOST}:{Config.REDIS_PORT}"
+            )
         except redis.exceptions.ConnectionError as e:
-            logger.warning(f"RetrieverAgent failed to connect to Redis cache: {e}. Caching will be disabled.")
+            logger.warning(
+                f"RetrieverAgent failed to connect to Redis cache: {e}. Caching will be disabled."
+            )
             self.cache = None
-        
+
         logger.info("Retriever Agent initialized")
 
     async def _get_cached_embedding(self, text: str) -> Optional[np.ndarray]:
@@ -86,11 +90,12 @@ class RetrieverAgent(BaseAgent):
             cache_key = f"embedding:{self.embedding_model_name}:{text_hash}"
             embedding_bytes = embedding.astype(np.float32).tobytes()
             # Cache for 7 days
-            await asyncio.to_thread(self.cache.set, cache_key, embedding_bytes, ex=60 * 60 * 24 * 7)
+            await asyncio.to_thread(
+                self.cache.set, cache_key, embedding_bytes, ex=60 * 60 * 24 * 7
+            )
             logger.debug(f"Cached embedding for text: {text[:50]}...")
         except Exception as e:
             logger.warning(f"Error caching embedding for '{text[:50]}...': {e}")
-
 
     async def initialize(self) -> bool:
         """Initialize the Pinecone client and embedding model.
@@ -141,14 +146,22 @@ class RetrieverAgent(BaseAgent):
             self.secondary_model_name = Config.SECONDARY_EMBEDDING_MODEL
             if self.secondary_model_name:
                 try:
-                    logger.info(f"Attempting to initialize secondary embedding model: {self.secondary_model_name}")
+                    logger.info(
+                        f"Attempting to initialize secondary embedding model: {self.secondary_model_name}"
+                    )
                     self.secondary_embedding_model = await asyncio.to_thread(
                         SentenceTransformer, self.secondary_model_name
                     )
-                    secondary_dim = self.secondary_embedding_model.get_sentence_embedding_dimension()
-                    logger.info(f"Initialized secondary embedding model: {self.secondary_model_name} (Dimensions: {secondary_dim})")
-                    
-                    primary_dim = self.embedding_model.get_sentence_embedding_dimension()
+                    secondary_dim = (
+                        self.secondary_embedding_model.get_sentence_embedding_dimension()
+                    )
+                    logger.info(
+                        f"Initialized secondary embedding model: {self.secondary_model_name} (Dimensions: {secondary_dim})"
+                    )
+
+                    primary_dim = (
+                        self.embedding_model.get_sentence_embedding_dimension()
+                    )
                     if secondary_dim != primary_dim:
                         logger.warning(
                             f"Secondary embedding model '{self.secondary_model_name}' has {secondary_dim} dimensions, "
@@ -156,8 +169,12 @@ class RetrieverAgent(BaseAgent):
                             "It cannot be used to directly query the primary Pinecone index."
                         )
                 except Exception as e:
-                    logger.error(f"Failed to initialize secondary embedding model '{self.secondary_model_name}': {e}")
-                    self.secondary_embedding_model = None # Ensure it's None if init fails
+                    logger.error(
+                        f"Failed to initialize secondary embedding model '{self.secondary_model_name}': {e}"
+                    )
+                    self.secondary_embedding_model = (
+                        None  # Ensure it's None if init fails
+                    )
 
             self.initialized = True
             return True
@@ -255,21 +272,29 @@ class RetrieverAgent(BaseAgent):
         try:
             # Process texts to get embeddings (cached or new)
             final_embeddings = []
-            texts_to_encode_map = {} # To map original index to text needing encoding
-            
+            texts_to_encode_map = {}  # To map original index to text needing encoding
+
             for i, text_content in enumerate(texts):
                 cached_embedding = await self._get_cached_embedding(text_content)
                 if cached_embedding is not None:
-                    final_embeddings.append((i, cached_embedding)) # Store with original index
+                    final_embeddings.append(
+                        (i, cached_embedding)
+                    )  # Store with original index
                 else:
                     texts_to_encode_map[i] = text_content
-            
-            texts_to_encode_list = [texts_to_encode_map[i] for i in sorted(texts_to_encode_map.keys())]
-            
+
+            texts_to_encode_list = [
+                texts_to_encode_map[i] for i in sorted(texts_to_encode_map.keys())
+            ]
+
             if texts_to_encode_list:
-                logger.info(f"Generating embeddings for {len(texts_to_encode_list)} new texts out of {len(texts)} total.")
-                new_embeddings_array = await asyncio.to_thread(self.embedding_model.encode, texts_to_encode_list)
-                
+                logger.info(
+                    f"Generating embeddings for {len(texts_to_encode_list)} new texts out of {len(texts)} total."
+                )
+                new_embeddings_array = await asyncio.to_thread(
+                    self.embedding_model.encode, texts_to_encode_list
+                )
+
                 current_new_embedding_idx = 0
                 for original_idx in sorted(texts_to_encode_map.keys()):
                     text_for_cache = texts_to_encode_map[original_idx]
@@ -277,11 +302,10 @@ class RetrieverAgent(BaseAgent):
                     final_embeddings.append((original_idx, new_embedding))
                     await self._cache_embedding(text_for_cache, new_embedding)
                     current_new_embedding_idx += 1
-            
+
             # Sort final_embeddings by original index to maintain order
             final_embeddings.sort(key=lambda x: x[0])
             ordered_embeddings_array = [emb for _, emb in final_embeddings]
-
 
             # Prepare vectors for upsert
             vectors = []
@@ -340,11 +364,14 @@ class RetrieverAgent(BaseAgent):
                     self.embedding_model.encode, query
                 )
                 # Ensure it's a numpy array even if encode returns a list (though it usually returns ndarray)
-                query_embedding = np.array(query_embedding_array) if not isinstance(query_embedding_array, np.ndarray) else query_embedding_array
+                query_embedding = (
+                    np.array(query_embedding_array)
+                    if not isinstance(query_embedding_array, np.ndarray)
+                    else query_embedding_array
+                )
                 await self._cache_embedding(query, query_embedding)
             else:
                 logger.debug(f"Query embedding cache hit for: {query[:50]}...")
-
 
             # Search the index
             results = await asyncio.to_thread(

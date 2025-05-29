@@ -58,7 +58,9 @@ class ScrapingAgent(BaseAgent):
 
             if use_firecrawl:
                 # Use Firecrawl for dynamic content
-                news = await self.firecrawl_scraper.scrape_financial_news(sources=sources)
+                news = await self.firecrawl_scraper.scrape_financial_news(
+                    sources=sources
+                )
                 return {"data": news, "source": "Firecrawl"}
             else:
                 # Use Scrapy for static content
@@ -84,7 +86,9 @@ class ScrapingAgent(BaseAgent):
             if not ticker:
                 return {"error": "No ticker specified for scrape_earnings operation"}
 
-            earnings = await self.firecrawl_scraper.scrape_earnings_report(ticker=ticker)
+            earnings = await self.firecrawl_scraper.scrape_earnings_report(
+                ticker=ticker
+            )
             return {"data": earnings, "source": "Firecrawl"}
 
         elif operation == "scrape_url":
@@ -96,22 +100,21 @@ class ScrapingAgent(BaseAgent):
                 return {"error": "No URL specified for scrape_url operation"}
 
             content = await self.firecrawl_scraper.scrape_url(
-                url_to_scrape=url, 
+                url_to_scrape=url,
                 page_options=page_options,
-                extractor_options=extractor_options
+                extractor_options=extractor_options,
             )
             return {"data": content, "source": "Firecrawl"}
 
         elif operation == "crawl_website":
             url = parameters.get("url")
-            crawler_options = parameters.get("crawler_options") 
-            
+            crawler_options = parameters.get("crawler_options")
+
             if not url:
                 return {"error": "No URL specified for crawl_website operation"}
-            
+
             crawl_data = await self.firecrawl_scraper.crawl_website(
-                url_to_crawl=url, 
-                crawler_options=crawler_options
+                url_to_crawl=url, crawler_options=crawler_options
             )
             return {"data": crawl_data, "source": "Firecrawl"}
 
@@ -164,7 +167,10 @@ class ScrapingAgent(BaseAgent):
         return await self.run(request)
 
     async def scrape_url(
-        self, url: str, page_options: Optional[Dict] = None, extractor_options: Optional[Dict] = None
+        self,
+        url: str,
+        page_options: Optional[Dict] = None,
+        extractor_options: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Scrape content from a specific URL using Firecrawl.
 
@@ -176,11 +182,15 @@ class ScrapingAgent(BaseAgent):
         Returns:
             Scraped content.
         """
-        request_payload = { 
+        request_payload = {
             "operation": "scrape_url",
-            "parameters": {"url": url, "page_options": page_options, "extractor_options": extractor_options},
+            "parameters": {
+                "url": url,
+                "page_options": page_options,
+                "extractor_options": extractor_options,
+            },
         }
-        return await self.run(request_payload) 
+        return await self.run(request_payload)
 
     async def crawl_website(
         self, url: str, crawler_options: Optional[Dict] = None

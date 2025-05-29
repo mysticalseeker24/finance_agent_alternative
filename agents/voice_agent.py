@@ -73,30 +73,34 @@ class VoiceAgent(BaseAgent):
         """
         try:
             # This import is here for clarity, it's usually at the top of the file.
-            import whisper 
+            import whisper
+
             # import os # Ensure os is imported at the top of the file
 
             tuned_model_path = Config.WHISPER_FINETUNED_MODEL_PATH
             model_to_load = None
-            loaded_model_type = "" # For logging
+            loaded_model_type = ""  # For logging
             model_identifier_for_log = "N/A"
-
 
             if tuned_model_path:
                 # Basic check for local path existence. HF Hub names won't pass this,
                 # but whisper.load_model() might handle HF Hub names directly.
                 if os.path.exists(tuned_model_path):
-                    logger.info(f"Attempting to load fine-tuned Whisper model from local path: {tuned_model_path}")
+                    logger.info(
+                        f"Attempting to load fine-tuned Whisper model from local path: {tuned_model_path}"
+                    )
                     model_to_load = tuned_model_path
                     loaded_model_type = "Fine-tuned (local)"
                     model_identifier_for_log = tuned_model_path
                 else:
                     # Assuming it could be an HF Hub model name if not a local path
-                    logger.info(f"Attempting to load fine-tuned Whisper model from Hugging Face Hub or alias: {tuned_model_path}")
+                    logger.info(
+                        f"Attempting to load fine-tuned Whisper model from Hugging Face Hub or alias: {tuned_model_path}"
+                    )
                     model_to_load = tuned_model_path
                     loaded_model_type = "Fine-tuned (HF Hub/Alias)"
                     model_identifier_for_log = tuned_model_path
-            
+
             if model_to_load:
                 try:
                     # The openai-whisper library's load_model can take a name (like 'medium')
@@ -105,27 +109,32 @@ class VoiceAgent(BaseAgent):
                     # might need conversion or a different loading mechanism if not directly compatible.
                     # For this conceptual step, we proceed assuming compatibility or that the user
                     # handles the format.
-                    self.stt_model = await asyncio.to_thread(whisper.load_model, model_to_load)
-                    logger.info(f"Successfully loaded {loaded_model_type} Whisper model: {model_identifier_for_log}")
+                    self.stt_model = await asyncio.to_thread(
+                        whisper.load_model, model_to_load
+                    )
+                    logger.info(
+                        f"Successfully loaded {loaded_model_type} Whisper model: {model_identifier_for_log}"
+                    )
                 except Exception as ft_load_error:
                     logger.warning(
                         f"Failed to load fine-tuned Whisper model from '{model_to_load}': {ft_load_error}. "
                         "Falling back to default model."
                     )
-                    model_to_load = None # Force fallback
-                    model_identifier_for_log = "N/A" # Reset identifier
-            
-            if not model_to_load: # If no tuned path or if loading tuned path failed
-                default_model_name = "base.en" # Changed default model
+                    model_to_load = None  # Force fallback
+                    model_identifier_for_log = "N/A"  # Reset identifier
+
+            if not model_to_load:  # If no tuned path or if loading tuned path failed
+                default_model_name = "base.en"  # Changed default model
                 logger.info(f"Loading default Whisper model: {default_model_name}")
-                self.stt_model = await asyncio.to_thread(whisper.load_model, default_model_name)
+                self.stt_model = await asyncio.to_thread(
+                    whisper.load_model, default_model_name
+                )
                 loaded_model_type = f"Default"
                 model_identifier_for_log = default_model_name
 
-
             # Try to get the actual model name/size if available from the loaded object for logging
             # This is a best-effort logging as custom paths won't have a 'name' attribute like standard models.
-            if hasattr(self.stt_model, 'name') and self.stt_model.name: 
+            if hasattr(self.stt_model, "name") and self.stt_model.name:
                 # This usually works for standard models like "medium", "base", etc.
                 log_model_name = self.stt_model.name
             else:
@@ -133,11 +142,13 @@ class VoiceAgent(BaseAgent):
                 # model_identifier_for_log set during loading attempt is more descriptive.
                 log_model_name = model_identifier_for_log
 
-            logger.info(f"Whisper speech-to-text model ({log_model_name} - type: {loaded_model_type}) initialized successfully.")
+            logger.info(
+                f"Whisper speech-to-text model ({log_model_name} - type: {loaded_model_type}) initialized successfully."
+            )
             return True
         except Exception as e:
             logger.error(f"Error initializing speech-to-text model: {str(e)}")
-            self.stt_model = None # Ensure stt_model is None if any error occurs
+            self.stt_model = None  # Ensure stt_model is None if any error occurs
             return False
 
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -518,8 +529,8 @@ class VoiceAgent(BaseAgent):
                 "model": voice,  # Default is 'meera'
                 "voice_preset": "default",
                 "audioformat": "mp3",
-                "pitch": 0,             # Added
-                "speaking_rate": 1.0    # Added (or "pace": 1.0 if that's the correct Sarvam term)
+                "pitch": 0,  # Added
+                "speaking_rate": 1.0,  # Added (or "pace": 1.0 if that's the correct Sarvam term)
             }
 
             # Make API request

@@ -75,7 +75,7 @@ if "market_brief" not in st.session_state:
 
 if "recording" not in st.session_state:
     st.session_state.recording = False
-    
+
 # Initialize output preference in session state
 if "output_preference" not in st.session_state:
     st.session_state.output_preference = "Text Only"
@@ -173,12 +173,18 @@ with st.sidebar:
     output_preference = st.radio(
         label="Select output format:",
         options=["Text Only", "Voice (English)", "Both Text and Voice"],
-        index=0 if st.session_state.output_preference == "Text Only" else
-              1 if st.session_state.output_preference == "Voice (English)" else 2,
+        index=(
+            0
+            if st.session_state.output_preference == "Text Only"
+            else 1 if st.session_state.output_preference == "Voice (English)" else 2
+        ),
         horizontal=True,
         key="output_preference_radio",
-        on_change=lambda: setattr(st.session_state, "output_preference", 
-                                  st.session_state.output_preference_radio)
+        on_change=lambda: setattr(
+            st.session_state,
+            "output_preference",
+            st.session_state.output_preference_radio,
+        ),
     )
 
     # Market brief schedule
@@ -345,19 +351,21 @@ with tabs[0]:
                 including the transcribed text in `response.query` or `response.response`, and potentially an `audio_url` for TTS output.
                 You will need to handle the response from `sendAudioToBackend` to update the Streamlit UI with the transcribed query and results.
                 """,
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
             # Placeholder for where actual record/stop buttons would go if using a custom component
-            st.info("🎤 Voice input UI elements (Record/Stop buttons) would be part of the custom component or HTML integration.")
+            st.info(
+                "🎤 Voice input UI elements (Record/Stop buttons) would be part of the custom component or HTML integration."
+            )
 
             # Fallback text input
             query = st.text_input(
                 "Question (type if voice not working, or after voice input)",
-                key="voice_query", # Keep key distinct or manage state carefully
+                key="voice_query",  # Keep key distinct or manage state carefully
                 placeholder="e.g., What are the risks for Asian tech stocks today?",
-                value=st.session_state.get("query_text", ""), # Allow JS to update this
+                value=st.session_state.get("query_text", ""),  # Allow JS to update this
             )
-            st.session_state.query_text = query # Update session state from this input
+            st.session_state.query_text = query  # Update session state from this input
         else:
             # Regular text input
             query = st.text_input(
@@ -368,12 +376,13 @@ with tabs[0]:
             )
             st.session_state.query_text = query
 
-
         # Process query when ask button is clicked
         # Ensure query from either voice (if implemented and updates query_text) or text input is used
         current_query_for_processing = st.session_state.get("query_text", "")
 
-        if st.button("Ask", type="primary"): # Removed 'or query' to avoid auto-submit on page load with pre-filled text
+        if st.button(
+            "Ask", type="primary"
+        ):  # Removed 'or query' to avoid auto-submit on page load with pre-filled text
             if current_query_for_processing:
                 with st.spinner("Processing your question..."):
                     try:
@@ -408,11 +417,14 @@ with tabs[0]:
 
                             # Display the response
                             st.subheader("Answer")
-                            
+
                             # Always show text for 'Text Only' or 'Both' options
-                            if st.session_state.output_preference in ["Text Only", "Both Text and Voice"]:
+                            if st.session_state.output_preference in [
+                                "Text Only",
+                                "Both Text and Voice",
+                            ]:
                                 st.write(result["response"])
-                                
+
                             # Determine if voice output is enabled based on user preference
                             voice_output = st.session_state.output_preference in [
                                 "Voice (English)",

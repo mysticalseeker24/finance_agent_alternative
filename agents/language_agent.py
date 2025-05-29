@@ -1,12 +1,21 @@
 """Language Agent for generating financial narratives using Langgraph and LangChain."""
 
-from typing import Dict, List, Any, Optional, Union, Callable, TypedDict # Added TypedDict
+from typing import (
+    Dict,
+    List,
+    Any,
+    Optional,
+    Union,
+    Callable,
+    TypedDict,
+)  # Added TypedDict
 import asyncio
 from datetime import datetime
 import json
 
 from loguru import logger
 from langchain.prompts import PromptTemplate
+
 # from langchain.schema import HumanMessage, SystemMessage # Not explicitly used in provided snippet
 # from langchain.llms import OpenAI # Replaced by ChatOpenAI in initialize_llm
 from langchain.chains import LLMChain
@@ -52,7 +61,9 @@ class LanguageAgent(BaseAgent):
 
             # Check if API key is available
             if not Config.OPENAI_API_KEY:
-                logger.error(f"OpenAI API key not found. Cannot initialize language model {Config.OPENAI_CHAT_MODEL_NAME}")
+                logger.error(
+                    f"OpenAI API key not found. Cannot initialize language model {Config.OPENAI_CHAT_MODEL_NAME}"
+                )
                 return False
 
             # Initialize with configured OpenAI model
@@ -62,7 +73,9 @@ class LanguageAgent(BaseAgent):
                 temperature=0.7,
                 openai_api_key=Config.OPENAI_API_KEY,
             )
-            logger.info(f"Initialized OpenAI language model: {Config.OPENAI_CHAT_MODEL_NAME}")
+            logger.info(
+                f"Initialized OpenAI language model: {Config.OPENAI_CHAT_MODEL_NAME}"
+            )
             return True
         except Exception as e:
             logger.error(f"Error initializing language model: {str(e)}")
@@ -170,30 +183,41 @@ class LanguageAgent(BaseAgent):
             final_state = await app.ainvoke(initial_state)
 
             if final_state.get("error"):
-                logger.error(f"Error in market brief generation graph: {final_state['error']}")
+                logger.error(
+                    f"Error in market brief generation graph: {final_state['error']}"
+                )
                 return {"error": final_state["error"]}
 
             # Format the result using the assembled brief from the graph's final state
-            brief_text = final_state.get("final_brief_text", "Error: Brief not generated.")
-            
+            brief_text = final_state.get(
+                "final_brief_text", "Error: Brief not generated."
+            )
+
             # Extract title and summary if possible (or generate simple ones)
             # This part might need refinement based on how final_brief_text is structured
-            brief_lines = brief_text.split('\n')
+            brief_lines = brief_text.split("\n")
             title = brief_lines[0] if brief_lines else "Market Brief"
-            
-            # For summary, we could take the first paragraph or a specific section if tagged
-            summary_content = final_state.get("generated_sections", {}).get("summary", "Summary not available.")
 
+            # For summary, we could take the first paragraph or a specific section if tagged
+            summary_content = final_state.get("generated_sections", {}).get(
+                "summary", "Summary not available."
+            )
 
             brief = {
                 "title": title,
                 "date": datetime.now().strftime("%Y-%m-%d"),
                 "summary": summary_content,
-                "market_overview": final_state.get("generated_sections", {}).get("market_overview", ""),
-                "portfolio_performance": final_state.get("generated_sections", {}).get("portfolio_performance", ""),
-                "news_highlights": final_state.get("generated_sections", {}).get("news_highlights", ""),
+                "market_overview": final_state.get("generated_sections", {}).get(
+                    "market_overview", ""
+                ),
+                "portfolio_performance": final_state.get("generated_sections", {}).get(
+                    "portfolio_performance", ""
+                ),
+                "news_highlights": final_state.get("generated_sections", {}).get(
+                    "news_highlights", ""
+                ),
                 "outlook": final_state.get("generated_sections", {}).get("outlook", ""),
-                "full_text": brief_text, # The assembled brief
+                "full_text": brief_text,  # The assembled brief
             }
             logger.info("Market brief generated successfully via LangGraph.")
             return brief
@@ -235,17 +259,21 @@ class LanguageAgent(BaseAgent):
             final_state = await app.ainvoke(initial_state)
 
             if final_state.get("error"):
-                logger.error(f"Error in query response generation graph: {final_state['error']}")
+                logger.error(
+                    f"Error in query response generation graph: {final_state['error']}"
+                )
                 return {"error": final_state["error"]}
 
-            response_text = final_state.get("final_response", "Error: Response not generated.")
+            response_text = final_state.get(
+                "final_response", "Error: Response not generated."
+            )
             reasoning = final_state.get("reasoning_steps", [])
 
             # Format the result
             response = {
                 "query": query,
                 "response": response_text,
-                "sources": [ # Assuming context items have metadata with source info
+                "sources": [  # Assuming context items have metadata with source info
                     item.get("metadata", {}) for item in context if "metadata" in item
                 ],
                 "confidence": 0.9,  # Placeholder, could be dynamic later
@@ -282,7 +310,9 @@ class LanguageAgent(BaseAgent):
                 Please provide a professional analysis of this data, highlighting key trends, risks, and opportunities.
                 Focus on {focus} and consider the implications for investors.
                 """
-                template = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + default_template_str
+                template = (
+                    SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + default_template_str
+                )
             # For user-provided templates, we don't add the system guidance here,
             # assuming it might be part of the custom template or handled differently.
             # However, if the intention is to always prepend for non-default, this logic would need adjustment.
@@ -326,6 +356,8 @@ class LanguageAgent(BaseAgent):
         Returns:
             A StateGraph object.
         """
+
+
 # --- State Schemas ---
 class QueryState(TypedDict):
     query: str
@@ -336,17 +368,21 @@ class QueryState(TypedDict):
     final_response: str
     error: Optional[str]
 
+
 class MarketBriefState(TypedDict):
     market_data: Dict[str, Any]
     portfolio_data: Dict[str, Any]
     news_data: List[Dict[str, Any]]
-    generated_sections: Dict[str, str] # e.g., {"summary": "...", "market_overview": "..."}
+    generated_sections: Dict[
+        str, str
+    ]  # e.g., {"summary": "...", "market_overview": "..."}
     final_brief_text: str
     error: Optional[str]
 
-
-# --- Helper for LLM Calls ---
-    async def _get_llm_response(self, prompt_template: PromptTemplate, inputs: Dict) -> str:
+    # --- Helper for LLM Calls ---
+    async def _get_llm_response(
+        self, prompt_template: PromptTemplate, inputs: Dict
+    ) -> str:
         """Helper to get response from LLM using a prompt template and inputs."""
         if not self.llm:
             logger.error("LLM not initialized. Cannot get LLM response.")
@@ -359,7 +395,7 @@ class MarketBriefState(TypedDict):
             logger.error(f"Error during LLM call: {str(e)}")
             return f"Error generating LLM response: {str(e)}"
 
-# --- Market Brief Graph ---
+    # --- Market Brief Graph ---
     async def _create_market_brief_graph(self) -> StateGraph:
         workflow = StateGraph(MarketBriefState)
 
@@ -369,13 +405,16 @@ class MarketBriefState(TypedDict):
                 "Generate a concise market summary based on the following market data and news. "
                 "Market Data: {market_data_json}\nNews Data: {news_data_json}\nSummary:"
             )
-            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            new_template_str = (
+                SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            )
             prompt = PromptTemplate.from_template(new_template_str)
             summary = await self._get_llm_response(
-                prompt, {
-                    "market_data_json": json.dumps(state['market_data']),
-                    "news_data_json": json.dumps(state['news_data'])
-                }
+                prompt,
+                {
+                    "market_data_json": json.dumps(state["market_data"]),
+                    "news_data_json": json.dumps(state["news_data"]),
+                },
             )
             current_sections = state.get("generated_sections", {})
             return {"generated_sections": {**current_sections, "summary": summary}}
@@ -383,29 +422,50 @@ class MarketBriefState(TypedDict):
         async def generate_market_overview_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating market overview...")
             existing_template_str = "Provide a market overview based on this data: {market_data_json}\nOverview:"
-            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            new_template_str = (
+                SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            )
             prompt = PromptTemplate.from_template(new_template_str)
-            overview = await self._get_llm_response(prompt, {"market_data_json": json.dumps(state['market_data'])})
+            overview = await self._get_llm_response(
+                prompt, {"market_data_json": json.dumps(state["market_data"])}
+            )
             current_sections = state.get("generated_sections", {})
-            return {"generated_sections": {**current_sections, "market_overview": overview}}
+            return {
+                "generated_sections": {**current_sections, "market_overview": overview}
+            }
 
         async def generate_portfolio_performance_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating portfolio performance...")
             existing_template_str = "Summarize portfolio performance. Portfolio Data: {portfolio_data_json}\nPerformance Summary:"
-            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            new_template_str = (
+                SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            )
             prompt = PromptTemplate.from_template(new_template_str)
-            performance = await self._get_llm_response(prompt, {"portfolio_data_json": json.dumps(state['portfolio_data'])})
+            performance = await self._get_llm_response(
+                prompt, {"portfolio_data_json": json.dumps(state["portfolio_data"])}
+            )
             current_sections = state.get("generated_sections", {})
-            return {"generated_sections": {**current_sections, "portfolio_performance": performance}}
-        
+            return {
+                "generated_sections": {
+                    **current_sections,
+                    "portfolio_performance": performance,
+                }
+            }
+
         async def generate_key_news_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating key news...")
             existing_template_str = "Highlight key financial news from the provided data: {news_data_json}\nKey News:"
-            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            new_template_str = (
+                SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            )
             prompt = PromptTemplate.from_template(new_template_str)
-            key_news = await self._get_llm_response(prompt, {"news_data_json": json.dumps(state['news_data'])})
+            key_news = await self._get_llm_response(
+                prompt, {"news_data_json": json.dumps(state["news_data"])}
+            )
             current_sections = state.get("generated_sections", {})
-            return {"generated_sections": {**current_sections, "news_highlights": key_news}}
+            return {
+                "generated_sections": {**current_sections, "news_highlights": key_news}
+            }
 
         async def generate_outlook_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating outlook...")
@@ -413,9 +473,13 @@ class MarketBriefState(TypedDict):
                 "Provide a brief market outlook based on current data and news. "
                 "Context: {all_sections_json}\nOutlook:"
             )
-            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            new_template_str = (
+                SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            )
             prompt = PromptTemplate.from_template(new_template_str)
-            outlook = await self._get_llm_response(prompt, {"all_sections_json": json.dumps(state['generated_sections'])})
+            outlook = await self._get_llm_response(
+                prompt, {"all_sections_json": json.dumps(state["generated_sections"])}
+            )
             current_sections = state.get("generated_sections", {})
             return {"generated_sections": {**current_sections, "outlook": outlook}}
 
@@ -448,42 +512,59 @@ class MarketBriefState(TypedDict):
         workflow.set_entry_point("summary")
         return workflow
 
-# --- Query Response Graph ---
+    # --- Query Response Graph ---
     async def _create_query_response_graph(self) -> StateGraph:
         workflow = StateGraph(QueryState)
 
         async def analyze_query_node(state: QueryState):
             logger.info(f"Query Graph: Analyzing query: '{state['query']}'")
             # Simple logging for now, can be expanded
-            return {"reasoning_steps": state.get("reasoning_steps", []) + ["Query analyzed"]}
+            return {
+                "reasoning_steps": state.get("reasoning_steps", []) + ["Query analyzed"]
+            }
 
         async def synthesize_context_node(state: QueryState):
             logger.info("Query Graph: Synthesizing context...")
-            context_texts = "\n".join([doc.get("text", "") or doc.get("metadata", {}).get("text", "") for doc in state.get("context", [])])
+            context_texts = "\n".join(
+                [
+                    doc.get("text", "") or doc.get("metadata", {}).get("text", "")
+                    for doc in state.get("context", [])
+                ]
+            )
             if not context_texts:
                 logger.info("Query Graph: No context provided or context is empty.")
                 return {
                     "intermediate_summary": "No specific context found to process.",
-                    "reasoning_steps": state.get("reasoning_steps", []) + ["Context synthesis attempted: No context found."]
+                    "reasoning_steps": state.get("reasoning_steps", [])
+                    + ["Context synthesis attempted: No context found."],
                 }
-            
+
             existing_template_str = (
                 "Given the user's query: '{query}'\n"
                 "And the following retrieved context:\n{context_texts}\n"
                 "Summarize the key information from the context that is most relevant to answering the query. "
                 "If the context seems irrelevant, explicitly state that."
             )
-            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            new_template_str = (
+                SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            )
             prompt = PromptTemplate.from_template(new_template_str)
-            summary = await self._get_llm_response(prompt, {"query": state["query"], "context_texts": context_texts})
+            summary = await self._get_llm_response(
+                prompt, {"query": state["query"], "context_texts": context_texts}
+            )
             return {
                 "intermediate_summary": summary,
-                "reasoning_steps": state.get("reasoning_steps", []) + ["Context synthesized"]
+                "reasoning_steps": state.get("reasoning_steps", [])
+                + ["Context synthesized"],
             }
 
         async def generate_response_node(state: QueryState):
             logger.info("Query Graph: Generating final response...")
-            portfolio_summary_str = json.dumps(state.get("portfolio_data"), indent=2) if state.get("portfolio_data") else "Not applicable."
+            portfolio_summary_str = (
+                json.dumps(state.get("portfolio_data"), indent=2)
+                if state.get("portfolio_data")
+                else "Not applicable."
+            )
             existing_template_str = (
                 "You are a helpful financial assistant. Answer the user's query based on the provided information. "
                 "User Query: '{query}'\n"
@@ -491,25 +572,30 @@ class MarketBriefState(TypedDict):
                 "User's Portfolio Summary (if relevant and available): {portfolio_summary}\n"
                 "Provide a concise and accurate answer."
             )
-            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            new_template_str = (
+                SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            )
             prompt = PromptTemplate.from_template(new_template_str)
             final_answer = await self._get_llm_response(
-                prompt, {
+                prompt,
+                {
                     "query": state["query"],
-                    "relevant_information": state.get("intermediate_summary", "No summary available."),
-                    "portfolio_summary": portfolio_summary_str
-                }
+                    "relevant_information": state.get(
+                        "intermediate_summary", "No summary available."
+                    ),
+                    "portfolio_summary": portfolio_summary_str,
+                },
             )
             return {
                 "final_response": final_answer,
-                "reasoning_steps": state.get("reasoning_steps", []) + ["Response generated"]
+                "reasoning_steps": state.get("reasoning_steps", [])
+                + ["Response generated"],
             }
-        
+
         # Optional error handling node example (can be expanded)
         async def handle_error_node(state: QueryState):
             logger.error(f"Query Graph: An error occurred: {state.get('error')}")
             return {"final_response": f"Sorry, an error occurred: {state.get('error')}"}
-
 
         workflow.add_node("analyze_query", analyze_query_node)
         workflow.add_node("synthesize_context", synthesize_context_node)
@@ -519,7 +605,7 @@ class MarketBriefState(TypedDict):
         workflow.add_edge("analyze_query", "synthesize_context")
         workflow.add_edge("synthesize_context", "generate_response")
         workflow.add_edge("generate_response", END)
-        
+
         # Basic conditional error routing (can be made more sophisticated)
         # workflow.add_conditional_edges(
         #     "synthesize_context",
@@ -546,7 +632,7 @@ class MarketBriefState(TypedDict):
 
     # _simulate_graph_execution is also removed as per instructions.
 
-    def _generate_mock_narrative( # This one remains as it's called by a separate operation
+    def _generate_mock_narrative(  # This one remains as it's called by a separate operation
         self, data: Dict[str, Any], variables: Dict[str, Any]
     ) -> str:
         """Generate a mock narrative from data and variables.
@@ -598,7 +684,11 @@ class MarketBriefState(TypedDict):
         }
         return await self.run(request)
 
-    async def reformulate_query(self, original_query: str, search_summary: str = "Initial search results were not specific enough.") -> str:
+    async def reformulate_query(
+        self,
+        original_query: str,
+        search_summary: str = "Initial search results were not specific enough.",
+    ) -> str:
         logger.info(f"Reformulating query: {original_query}")
         existing_template_str = (
             "The original user query was: '{original_query}'\n"
@@ -606,30 +696,39 @@ class MarketBriefState(TypedDict):
             "Please reformulate the original query to be clearer, more specific, or broader in a way that might yield better search results in a financial context. "
             "Return only the reformulated query."
         )
-        new_template_str = SYSTEM_GUIDANCE_QUERY_REFORMULATION + "\n\n" + existing_template_str
+        new_template_str = (
+            SYSTEM_GUIDANCE_QUERY_REFORMULATION + "\n\n" + existing_template_str
+        )
         prompt_template = PromptTemplate.from_template(new_template_str)
         # Ensure self.llm is initialized
         if not self.llm:
             await self.initialize_llm()
-        if not self.llm: # If still not initialized
-            logger.error("LLM not initialized in LanguageAgent. Cannot reformulate query.")
-            return original_query # Fallback to original query
+        if not self.llm:  # If still not initialized
+            logger.error(
+                "LLM not initialized in LanguageAgent. Cannot reformulate query."
+            )
+            return original_query  # Fallback to original query
 
         # Use the existing _get_llm_response helper
         try:
             reformulated_query = await self._get_llm_response(
-                prompt_template, 
-                {"original_query": original_query, "search_summary": search_summary}
+                prompt_template,
+                {"original_query": original_query, "search_summary": search_summary},
             )
-            if "Error: LLM not available." in reformulated_query or "Error generating LLM response:" in reformulated_query :
-                 logger.error(f"LLM response error during reformulation: {reformulated_query}")
-                 return original_query # Fallback
-            
+            if (
+                "Error: LLM not available." in reformulated_query
+                or "Error generating LLM response:" in reformulated_query
+            ):
+                logger.error(
+                    f"LLM response error during reformulation: {reformulated_query}"
+                )
+                return original_query  # Fallback
+
             logger.info(f"Reformulated query: {reformulated_query}")
             return reformulated_query.strip()
         except Exception as e:
             logger.error(f"Error during query reformulation: {e}")
-            return original_query # Fallback to original query
+            return original_query  # Fallback to original query
 
     async def generate_query_response(
         self, query: str, context: List[Dict[str, Any]], portfolio_data: Dict[str, Any]

@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Any, Optional
 import asyncio
-import aiohttp # Added
+import aiohttp  # Added
 
 from loguru import logger
 
@@ -86,27 +86,41 @@ class APIAgent(BaseAgent):
         elif operation == "get_earnings_history":
             ticker = parameters.get("ticker")
             if not ticker:
-                return {"error": "No ticker specified for get_earnings_history operation"}
-            
+                return {
+                    "error": "No ticker specified for get_earnings_history operation"
+                }
+
             earnings_history_data = await asyncio.to_thread(
                 self.yfinance_client.get_earnings_history, ticker
             )
-            
+
             # Convert DataFrame to list of dictionaries if it's a DataFrame
             # yfinance_client.get_earnings_history already handles data conversion for cache
             # and should return a DataFrame or an error dict.
             if hasattr(earnings_history_data, "to_dict"):
                 # If index is DatetimeIndex, reset it to include in dicts
-                if hasattr(earnings_history_data.index, 'strftime'):
-                    earnings_history_data_serializable = earnings_history_data.reset_index()
+                if hasattr(earnings_history_data.index, "strftime"):
+                    earnings_history_data_serializable = (
+                        earnings_history_data.reset_index()
+                    )
                     # Convert datetime objects in the new index column to string
-                    date_column_name = earnings_history_data_serializable.columns[0] # typically 'index' or 'Earnings Date'
-                    earnings_history_data_serializable[date_column_name] = earnings_history_data_serializable[date_column_name].dt.strftime('%Y-%m-%d')
+                    date_column_name = earnings_history_data_serializable.columns[
+                        0
+                    ]  # typically 'index' or 'Earnings Date'
+                    earnings_history_data_serializable[date_column_name] = (
+                        earnings_history_data_serializable[
+                            date_column_name
+                        ].dt.strftime("%Y-%m-%d")
+                    )
 
-                else: # If index is not datetime, just reset
-                    earnings_history_data_serializable = earnings_history_data.reset_index()
+                else:  # If index is not datetime, just reset
+                    earnings_history_data_serializable = (
+                        earnings_history_data.reset_index()
+                    )
 
-                earnings_history_data = earnings_history_data_serializable.to_dict(orient="records")
+                earnings_history_data = earnings_history_data_serializable.to_dict(
+                    orient="records"
+                )
 
             return {"data": earnings_history_data}
 
@@ -114,10 +128,10 @@ class APIAgent(BaseAgent):
             url = parameters.get("url")
             if not url:
                 return {"error": "No URL specified for fetch_generic_json operation"}
-            
+
             params = parameters.get("params")
             headers = parameters.get("headers")
-            
+
             # Call the actual implementation method
             # The self.run() wrapper in BaseAgent will handle adding agent name, processing time etc.
             # So, the 'process' method should directly return what the core logic returns.
@@ -132,7 +146,7 @@ class APIAgent(BaseAgent):
         # This method will be wrapped by self.run() by the caller or by adding an operation
         # For direct calling, it would be:
         # request_details = {"operation": "fetch_generic_json", "parameters": {"url": url, "params": params, "headers": headers}}
-        # return await self.run(request_details) 
+        # return await self.run(request_details)
         # However, to make it directly callable and also usable via 'process', we'll have it do the work
         # and the 'process' method will call this.
 
@@ -147,15 +161,32 @@ class APIAgent(BaseAgent):
                     # Typically, the actual data is under a "data" key in the successful response.
                     return {"data": data, "url": url, "status_code": response.status}
         except aiohttp.ClientResponseError as e:
-            logger.error(f"API Error fetching {url}: {e.status} - {e.message} - {e.headers}")
-            return {"error": f"API Error: {e.status} - {e.message}", "url": url, "status_code": e.status}
-        except aiohttp.ClientError as e: # More general client errors (e.g., connection error)
+            logger.error(
+                f"API Error fetching {url}: {e.status} - {e.message} - {e.headers}"
+            )
+            return {
+                "error": f"API Error: {e.status} - {e.message}",
+                "url": url,
+                "status_code": e.status,
+            }
+        except (
+            aiohttp.ClientError
+        ) as e:  # More general client errors (e.g., connection error)
             logger.error(f"ClientError fetching {url}: {str(e)}")
-            return {"error": f"ClientError: {str(e)}", "url": url, "status_code": "N/A"} # Status code might not be available
-        except Exception as e: # Catch other exceptions like JSONDecodeError if response is not valid JSON
+            return {
+                "error": f"ClientError: {str(e)}",
+                "url": url,
+                "status_code": "N/A",
+            }  # Status code might not be available
+        except (
+            Exception
+        ) as e:  # Catch other exceptions like JSONDecodeError if response is not valid JSON
             logger.error(f"Generic error fetching {url}: {str(e)}")
-            return {"error": f"Generic error: {str(e)}", "url": url, "status_code": "N/A"}
-
+            return {
+                "error": f"Generic error: {str(e)}",
+                "url": url,
+                "status_code": "N/A",
+            }
 
     async def get_stock_info(self, ticker: str) -> Dict[str, Any]:
         """Get stock information.
@@ -218,7 +249,10 @@ class APIAgent(BaseAgent):
         Returns:
             Historical earnings data.
         """
-        request = {"operation": "get_earnings_history", "parameters": {"ticker": ticker}}
+        request = {
+            "operation": "get_earnings_history",
+            "parameters": {"ticker": ticker},
+        }
         return await self.run(request)
 
     async def get_portfolio_data(
