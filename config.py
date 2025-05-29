@@ -63,8 +63,8 @@ class Config:
     WHISPER_FINETUNED_MODEL_PATH = os.getenv("WHISPER_FINETUNED_MODEL_PATH", None)
 
     # External Service URLs
-    # Defaulting to Firecrawl's v0 API base for core scrape/crawl operations.
-    FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev/v0") 
+    # Base URL for Firecrawl API. Specific endpoints like /v1/scrape will be appended by the client.
+    FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev") 
 
     # Required API Key Groups
     # At least one from each group must be present
