@@ -183,6 +183,15 @@ FASTAPI_PORT=8000  # Port for the API server
 STREAMLIT_PORT=8501  # Port for the Streamlit app
 ```
 
+#### Default Portfolio (Optional)
+
+You can define a default portfolio that the system uses (e.g., for market briefs if no specific user portfolio is implemented). This is set via the `DEFAULT_PORTFOLIO_JSON` environment variable in your `.env` file.
+
+-   **`DEFAULT_PORTFOLIO_JSON`**: A JSON string representing a list of portfolio items. Each item should be a dictionary with keys like "ticker", "weight", and optionally "shares".
+    Example: `'[{"ticker": "AAPL", "weight": 0.5, "shares": 10}, {"ticker": "MSFT", "weight": 0.5, "shares": 5}]'`
+
+    Refer to the commented example in `.env.example` for formatting. If this variable is not set or is invalid JSON, a hardcoded default portfolio within the application will be used.
+
 ## Vector Database Setup
 
 ### Pinecone Index

@@ -4,6 +4,7 @@ import os
 import sys
 from typing import Dict, Any, List, Optional
 from pathlib import Path
+import json # Added
 
 import dotenv
 from loguru import logger
@@ -56,6 +57,36 @@ class Config:
     VOICE_MODEL = os.getenv("VOICE_MODEL", "meera")
     # Optional: Path to a fine-tuned Whisper model directory or Hugging Face Hub model name.
     WHISPER_FINETUNED_MODEL_PATH = os.getenv("WHISPER_FINETUNED_MODEL_PATH", None)
+
+    # Default Portfolio Configuration
+    DEFAULT_PORTFOLIO_JSON = os.getenv("DEFAULT_PORTFOLIO_JSON")
+    DEFAULT_PORTFOLIO: List[Dict[str, Any]] = [] # Type hint for clarity
+    if DEFAULT_PORTFOLIO_JSON:
+        try:
+            DEFAULT_PORTFOLIO = json.loads(DEFAULT_PORTFOLIO_JSON)
+            logger.info(f"Loaded default portfolio from environment variable. Portfolio size: {len(DEFAULT_PORTFOLIO)} items.")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse DEFAULT_PORTFOLIO_JSON: {e}. Using empty portfolio as default.")
+            DEFAULT_PORTFOLIO = [] 
+    else:
+        logger.info("DEFAULT_PORTFOLIO_JSON not set in environment. Using hardcoded default portfolio.")
+        DEFAULT_PORTFOLIO = [
+            {"ticker": "AAPL", "weight": 0.15, "shares": 10},
+            {"ticker": "MSFT", "weight": 0.12, "shares": 8},
+            {"ticker": "AMZN", "weight": 0.10, "shares": 5},
+            {"ticker": "GOOGL", "weight": 0.08, "shares": 3},
+            {"ticker": "BRK-B", "weight": 0.07, "shares": 2}, # Note: YFinance uses BRK-B for Berkshire Hathaway Class B
+            {"ticker": "JNJ", "weight": 0.06, "shares": 7},
+            {"ticker": "JPM", "weight": 0.05, "shares": 15},
+            {"ticker": "V", "weight": 0.05, "shares": 10},
+            {"ticker": "PG", "weight": 0.04, "shares": 12},
+            {"ticker": "UNH", "weight": 0.04, "shares": 3},
+            # Example: Fill remaining 24% with a couple more diverse stocks
+            {"ticker": "XOM", "weight": 0.12, "shares": 10}, # Exxon Mobil (Energy)
+            {"ticker": "TSLA", "weight": 0.12, "shares": 2},   # Tesla (Consumer Discretionary/Auto)
+        ]
+        # Adjust weights if necessary to sum to 1.0 if that's a requirement for analysis_agent
+        # Current sum of example weights: 0.15+0.12+0.10+0.08+0.07+0.06+0.05+0.05+0.04+0.04+0.12+0.12 = 1.0
 
     # Required API Key Groups
     # At least one from each group must be present

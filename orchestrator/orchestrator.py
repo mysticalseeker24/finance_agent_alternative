@@ -255,21 +255,11 @@ class Orchestrator:
 
             # Step 3: Get and analyze portfolio data
             # This would typically come from a database or user configuration
-            # For this example, we'll use a placeholder portfolio
-            portfolio = [
-                {"ticker": "AAPL", "weight": 0.15},
-                {"ticker": "MSFT", "weight": 0.12},
-                {"ticker": "AMZN", "weight": 0.10},
-                {"ticker": "GOOGL", "weight": 0.08},
-                {"ticker": "BRK.B", "weight": 0.07},
-                {"ticker": "JNJ", "weight": 0.06},
-                {"ticker": "JPM", "weight": 0.05},
-                {"ticker": "V", "weight": 0.05},
-                {"ticker": "PG", "weight": 0.04},
-                {"ticker": "UNH", "weight": 0.04},
-                # Remaining 24% in other stocks
-            ]
-
+            # Using the default portfolio from Config
+            portfolio = Config.DEFAULT_PORTFOLIO
+            if not portfolio:
+                 logger.warning("Config.DEFAULT_PORTFOLIO is empty. Portfolio analysis will be based on an empty portfolio.")
+            
             logger.info("Analyzing portfolio data")
             portfolio_response = await self.analysis_agent.analyze_portfolio(portfolio)
             portfolio_data = portfolio_response.get("data", {})
@@ -438,20 +428,10 @@ class Orchestrator:
             for term in ["portfolio", "holdings", "positions", "stocks", "investment"]
         ):
             # This would typically come from a database or user configuration
-            # For this example, we'll use a placeholder portfolio
-            portfolio = [
-                {"ticker": "AAPL", "weight": 0.15},
-                {"ticker": "MSFT", "weight": 0.12},
-                {"ticker": "AMZN", "weight": 0.10},
-                {"ticker": "GOOGL", "weight": 0.08},
-                {"ticker": "BRK.B", "weight": 0.07},
-                {"ticker": "JNJ", "weight": 0.06},
-                {"ticker": "JPM", "weight": 0.05},
-                {"ticker": "V", "weight": 0.05},
-                {"ticker": "PG", "weight": 0.04},
-                {"ticker": "UNH", "weight": 0.04},
-                # Remaining 24% in other stocks
-            ]
+            # Using the default portfolio from Config
+            portfolio = Config.DEFAULT_PORTFOLIO
+            if not portfolio:
+                logger.warning("Config.DEFAULT_PORTFOLIO is empty for query context. Portfolio analysis will be based on an empty portfolio.")
 
             portfolio_response = await self.analysis_agent.analyze_portfolio(portfolio)
             gathered_data["portfolio_data"] = portfolio_response.get("data", {})
@@ -485,12 +465,19 @@ class Orchestrator:
             term in query_lower for term in ["risk", "exposure", "volatility", "beta"]
         ):
             # This would typically use historical data for risk calculations
-            # For this example, we'll use a placeholder
-            if "portfolio_data" in gathered_data:
+            # Use Config.DEFAULT_PORTFOLIO if portfolio data hasn't been loaded yet
+            # Or if the query is specifically about generic portfolio risk without prior portfolio context
+            current_portfolio_for_risk = portfolio if "portfolio_data" in gathered_data and portfolio else Config.DEFAULT_PORTFOLIO
+            if not current_portfolio_for_risk:
+                 logger.warning("Config.DEFAULT_PORTFOLIO is empty for risk calculation. Risk analysis might be limited.")
+            
+            if current_portfolio_for_risk: # Proceed if there's any portfolio
                 risk_response = await self.analysis_agent.calculate_risk(
-                    tickers=[item["ticker"] for item in portfolio]
+                    tickers=[item["ticker"] for item in current_portfolio_for_risk if "ticker" in item] # Ensure item has 'ticker'
                 )
                 gathered_data["risk_data"] = risk_response.get("data", {})
+            else: # No portfolio to analyze for risk
+                gathered_data["risk_data"] = {"error": "No portfolio data available to calculate risk."}
 
         # Check for specific regional focus
         regions = {
