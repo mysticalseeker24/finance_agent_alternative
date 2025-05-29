@@ -27,6 +27,8 @@ class Config:
 
     # LLM Provider
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
+    # Specifies the OpenAI chat model to be used by LanguageAgent.
+    OPENAI_CHAT_MODEL_NAME = os.getenv("OPENAI_CHAT_MODEL_NAME", "gpt-4o")
     LOCAL_MODEL_PATH = os.getenv("LOCAL_MODEL_PATH")
 
     # Database Configuration

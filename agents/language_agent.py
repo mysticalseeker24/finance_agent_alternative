@@ -15,6 +15,21 @@ from langgraph.graph import END, StateGraph
 from agents.base_agent import BaseAgent
 from config import Config
 
+# System Guidance Constants
+SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT = (
+    "You are a specialized financial assistant. Your expertise is in providing data-driven insights, "
+    "analysis, and information related to financial markets, securities, economic indicators, and "
+    "portfolio management. Focus solely on these topics. Maintain a professional, objective, and "
+    "analytical tone. Do not engage in speculation, provide financial advice, or discuss "
+    "non-financial subjects. Base your responses on the information and context provided."
+)
+
+SYSTEM_GUIDANCE_QUERY_REFORMULATION = (
+    "You are an AI assistant helping to refine financial queries for better search results. "
+    "Your goal is to make the query clearer, more specific, or appropriately broader while strictly "
+    "maintaining a financial context. Only return the reformulated query."
+)
+
 
 class LanguageAgent(BaseAgent):
     """Agent for generating financial narratives and text responses."""
@@ -37,17 +52,17 @@ class LanguageAgent(BaseAgent):
 
             # Check if API key is available
             if not Config.OPENAI_API_KEY:
-                logger.error("OpenAI API key not found. Cannot initialize GPT-4.1")
+                logger.error(f"OpenAI API key not found. Cannot initialize language model {Config.OPENAI_CHAT_MODEL_NAME}")
                 return False
 
-            # Initialize with GPT-4.1 model
+            # Initialize with configured OpenAI model
             self.llm = await asyncio.to_thread(
                 ChatOpenAI,
-                model_name="gpt-4-1106-preview",  # Use GPT-4.1 model
+                model_name=Config.OPENAI_CHAT_MODEL_NAME,
                 temperature=0.7,
                 openai_api_key=Config.OPENAI_API_KEY,
             )
-            logger.info("Initialized GPT-4.1 language model")
+            logger.info(f"Initialized OpenAI language model: {Config.OPENAI_CHAT_MODEL_NAME}")
             return True
         except Exception as e:
             logger.error(f"Error initializing language model: {str(e)}")
@@ -260,13 +275,18 @@ class LanguageAgent(BaseAgent):
             # Create a prompt template
             if not template:
                 # Use a default template if none provided
-                template = """You are a financial analyst providing insights on market data.
+                default_template_str = """You are a financial analyst providing insights on market data.
                 
                 Data: {data}
                 
                 Please provide a professional analysis of this data, highlighting key trends, risks, and opportunities.
                 Focus on {focus} and consider the implications for investors.
                 """
+                template = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + default_template_str
+            # For user-provided templates, we don't add the system guidance here,
+            # assuming it might be part of the custom template or handled differently.
+            # However, if the intention is to always prepend for non-default, this logic would need adjustment.
+            # Based on current instruction: "Do not modify user-provided custom template strings."
 
             prompt_template = PromptTemplate(
                 template=template, input_variables=["data", "focus"]
@@ -345,10 +365,12 @@ class MarketBriefState(TypedDict):
 
         async def generate_summary_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating summary...")
-            prompt = PromptTemplate.from_template(
+            existing_template_str = (
                 "Generate a concise market summary based on the following market data and news. "
                 "Market Data: {market_data_json}\nNews Data: {news_data_json}\nSummary:"
             )
+            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            prompt = PromptTemplate.from_template(new_template_str)
             summary = await self._get_llm_response(
                 prompt, {
                     "market_data_json": json.dumps(state['market_data']),
@@ -360,37 +382,39 @@ class MarketBriefState(TypedDict):
 
         async def generate_market_overview_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating market overview...")
-            prompt = PromptTemplate.from_template(
-                "Provide a market overview based on this data: {market_data_json}\nOverview:"
-            )
+            existing_template_str = "Provide a market overview based on this data: {market_data_json}\nOverview:"
+            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            prompt = PromptTemplate.from_template(new_template_str)
             overview = await self._get_llm_response(prompt, {"market_data_json": json.dumps(state['market_data'])})
             current_sections = state.get("generated_sections", {})
             return {"generated_sections": {**current_sections, "market_overview": overview}}
 
         async def generate_portfolio_performance_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating portfolio performance...")
-            prompt = PromptTemplate.from_template(
-                "Summarize portfolio performance. Portfolio Data: {portfolio_data_json}\nPerformance Summary:"
-            )
+            existing_template_str = "Summarize portfolio performance. Portfolio Data: {portfolio_data_json}\nPerformance Summary:"
+            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            prompt = PromptTemplate.from_template(new_template_str)
             performance = await self._get_llm_response(prompt, {"portfolio_data_json": json.dumps(state['portfolio_data'])})
             current_sections = state.get("generated_sections", {})
             return {"generated_sections": {**current_sections, "portfolio_performance": performance}}
         
         async def generate_key_news_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating key news...")
-            prompt = PromptTemplate.from_template(
-                "Highlight key financial news from the provided data: {news_data_json}\nKey News:"
-            )
+            existing_template_str = "Highlight key financial news from the provided data: {news_data_json}\nKey News:"
+            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            prompt = PromptTemplate.from_template(new_template_str)
             key_news = await self._get_llm_response(prompt, {"news_data_json": json.dumps(state['news_data'])})
             current_sections = state.get("generated_sections", {})
             return {"generated_sections": {**current_sections, "news_highlights": key_news}}
 
         async def generate_outlook_node(state: MarketBriefState):
             logger.info("Market Brief Graph: Generating outlook...")
-            prompt = PromptTemplate.from_template(
+            existing_template_str = (
                 "Provide a brief market outlook based on current data and news. "
                 "Context: {all_sections_json}\nOutlook:"
             )
+            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            prompt = PromptTemplate.from_template(new_template_str)
             outlook = await self._get_llm_response(prompt, {"all_sections_json": json.dumps(state['generated_sections'])})
             current_sections = state.get("generated_sections", {})
             return {"generated_sections": {**current_sections, "outlook": outlook}}
@@ -443,12 +467,14 @@ class MarketBriefState(TypedDict):
                     "reasoning_steps": state.get("reasoning_steps", []) + ["Context synthesis attempted: No context found."]
                 }
             
-            prompt = PromptTemplate.from_template(
+            existing_template_str = (
                 "Given the user's query: '{query}'\n"
                 "And the following retrieved context:\n{context_texts}\n"
                 "Summarize the key information from the context that is most relevant to answering the query. "
                 "If the context seems irrelevant, explicitly state that."
             )
+            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            prompt = PromptTemplate.from_template(new_template_str)
             summary = await self._get_llm_response(prompt, {"query": state["query"], "context_texts": context_texts})
             return {
                 "intermediate_summary": summary,
@@ -458,13 +484,15 @@ class MarketBriefState(TypedDict):
         async def generate_response_node(state: QueryState):
             logger.info("Query Graph: Generating final response...")
             portfolio_summary_str = json.dumps(state.get("portfolio_data"), indent=2) if state.get("portfolio_data") else "Not applicable."
-            prompt = PromptTemplate.from_template(
+            existing_template_str = (
                 "You are a helpful financial assistant. Answer the user's query based on the provided information. "
                 "User Query: '{query}'\n"
                 "Relevant Information/Context Summary: {relevant_information}\n"
                 "User's Portfolio Summary (if relevant and available): {portfolio_summary}\n"
                 "Provide a concise and accurate answer."
             )
+            new_template_str = SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT + "\n\n" + existing_template_str
+            prompt = PromptTemplate.from_template(new_template_str)
             final_answer = await self._get_llm_response(
                 prompt, {
                     "query": state["query"],
@@ -572,12 +600,14 @@ class MarketBriefState(TypedDict):
 
     async def reformulate_query(self, original_query: str, search_summary: str = "Initial search results were not specific enough.") -> str:
         logger.info(f"Reformulating query: {original_query}")
-        prompt_template = PromptTemplate.from_template(
+        existing_template_str = (
             "The original user query was: '{original_query}'\n"
             "A previous search based on this query yielded results that were: '{search_summary}'\n"
             "Please reformulate the original query to be clearer, more specific, or broader in a way that might yield better search results in a financial context. "
             "Return only the reformulated query."
         )
+        new_template_str = SYSTEM_GUIDANCE_QUERY_REFORMULATION + "\n\n" + existing_template_str
+        prompt_template = PromptTemplate.from_template(new_template_str)
         # Ensure self.llm is initialized
         if not self.llm:
             await self.initialize_llm()

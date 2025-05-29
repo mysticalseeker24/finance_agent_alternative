@@ -97,6 +97,12 @@ Configure at least ONE of these LLM providers:
    ```
    OPENAI_API_KEY=your_openai_api_key
    ```
+   You can also specify the chat model used by the Language Agent by setting the `OPENAI_CHAT_MODEL_NAME` variable. It defaults to "gpt-4o" if not set.
+   ```
+   # Optional: Specify the OpenAI chat model (e.g., gpt-4o, gpt-4o-mini, gpt-3.5-turbo)
+   # OPENAI_CHAT_MODEL_NAME=gpt-4o 
+   ```
+   Refer to `.env.example` for the exact variable name and example.
 
 ##### Option 2: Anthropic
 

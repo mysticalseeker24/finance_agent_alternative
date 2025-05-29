@@ -31,13 +31,27 @@ These examples represent a fraction of the interactions but showcase how AI was 
 
 ### Primary Language Model (LLM)
 
-*   **Model Used:** OpenAI `gpt-4-1106-preview` (GPT-4 Turbo).
-    *   This model was selected for its strong reasoning capabilities, large context window, and ability to follow complex instructions necessary for code generation, refactoring, and natural language processing tasks within the `LanguageAgent`.
+*   **Model Used:** OpenAI model specified by `Config.OPENAI_CHAT_MODEL_NAME`, defaulting to `gpt-4o`. Previously `gpt-4-1106-preview`.
+    *   This model (e.g., `gpt-4o`) is selected for its strong reasoning capabilities, large context window, speed, and improved cost-effectiveness, suitable for tasks within the `LanguageAgent`.
 *   **Configuration in `LanguageAgent`:**
     *   `temperature`: `0.7` (This setting balances creativity and determinism, suitable for generating diverse yet coherent financial narratives and responses).
 *   **Usage:**
     *   Dynamic response generation in LangGraph workflows within the `LanguageAgent` (e.g., for market briefs and query responses).
     *   Query reformulation in the `Orchestrator` (via `LanguageAgent.reformulate_query`) to improve RAG retrieval quality.
+
+### System Prompts for Language Agent
+
+To enhance contextual relevance and guide the Language Agent's behavior, specific system prompts have been implemented:
+
+*   **`SYSTEM_GUIDANCE_FINANCIAL_ASSISTANT`**:
+    *   **Purpose**: Provides overall guidance to the LLM when acting as a financial assistant (e.g., for market brief generation, query responses).
+    *   **Content Summary**: Instructs the LLM to be a specialized financial assistant, focus on data-driven insights related to finance, maintain a professional and analytical tone, and avoid speculation, financial advice, or non-financial topics. It also emphasizes basing responses on provided information.
+    *   **Implementation**: Prepended to various prompt templates within the `LanguageAgent`'s graph workflows and helper methods.
+
+*   **`SYSTEM_GUIDANCE_QUERY_REFORMULATION`**:
+    *   **Purpose**: Guides the LLM specifically when reformulating user queries for better search results.
+    *   **Content Summary**: Instructs the LLM to act as an AI assistant refining financial queries, aiming for clarity, specificity, or appropriate breadth while strictly maintaining financial context, and to return only the reformulated query.
+    *   **Implementation**: Prepended to the prompt template in the `LanguageAgent.reformulate_query` method.
 
 ### Embedding Models (SentenceTransformers)
 
